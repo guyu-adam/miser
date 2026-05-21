@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.3.1 (2026-05-21) — Engineering Robustness
+
+### Fixed (review #26-30)
+- #26: `task_id` uses `uuid4()[:8]` instead of `id(d)` (GC-safe unique IDs)
+- #27: `task_queue.py` adds `from __future__ import annotations` (3.10 compat)
+- #28: `/chat` and `/codegen` unified to use request queue (no more 429)
+- #29: `MISER_LOG_FORMAT=json` for structured JSON logging
+- #30: SIGTERM/SIGINT graceful shutdown — drains queue before exiting
+
+### Added (Phase 1 roadmap)
+- `tests/test_integration.py`: 14 Flask test client cases (8 endpoints + health/batch)
+- `Dockerfile` + `docker-compose.yml`: one-command deployment with Ollama sidecar
+- `MAX_CONTENT_LENGTH=5MB` request size limit (prevents OOM)
+- `task_queue.py` renamed from `queue.py` (stdlib shadow fix)
+
+### Changed
+- Test suite: 57 cases total (43 unit + 14 integration)
+- `/ask`, `/chat`, `/codegen` now return 202 + `{"queued": true, "position": N}`
+- All version strings bump to 1.3.1
+
 ## v1.3.0 (2026-05-21) — Commercialization Stage 1
 
 ### Added

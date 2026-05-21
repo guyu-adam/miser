@@ -5,7 +5,7 @@ Two execution paths:
   2. Local LLM (no API cost): summarize, codegen, explain, fix, test, review, git_summary
 """
 
-import os, re, threading, time
+import os, re, threading, time, signal, uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -27,10 +27,11 @@ from tools import (
 )
 from prefetch import observe_access, get_stats as prefetch_stats
 from condenser import distill, condensation_ratio
-from queue import get_queue, QueuedTask
+from task_queue import get_queue, QueuedTask
 
 console = Console()
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024   # 5MB (v1.3.1 P1)
 
 MODEL = os.environ.get("MISER_MODEL", "miser-qwen")
 AUTH_TOKEN = os.environ.get("MISER_AUTH_TOKEN", "")   # review item #4
@@ -195,7 +196,7 @@ def health():
     q = get_queue()
     return jsonify({
         "status": "ok",
-        "version": "1.3.0",
+        "version": "1.3.1",
         "model": MODEL,
         "model_family": adapter.family,
         "worker": st.status,
@@ -232,7 +233,7 @@ def ask():
         # v1.3: queue instead of rejecting (commercialization P0)
         q = get_queue()
         qt = QueuedTask(
-            task_id=str(id(d)),
+            task_id=str(uuid.uuid4())[:8],   # review #26
             task=task, sender=d.get("from","?"),
             system=d.get("system",""), max_tokens=d.get("max_tokens",600),
             explicit_type=d.get("type","ask"),
@@ -251,7 +252,14 @@ def chat():
     if not _check_auth(d): return _auth_fail()
     task = d.get("task","").strip()
     if not task: return jsonify({"error":"task required"}), 400
-    if st.status == "WORKING": return jsonify({"error":"busy"}), 429
+    if st.status == "WORKING":
+        q = get_queue()
+        qt = QueuedTask(task_id=str(uuid.uuid4())[:8], task=task, sender=d.get("from","?"),
+                        system=d.get("system",""), max_tokens=d.get("max_tokens",600),
+                        explicit_type=d.get("type",""))
+        if q.enqueue(qt):
+            return jsonify({"queued": True, "position": q.size, "task": task[:80]}), 202
+        return jsonify({"error":"queue_full"}), 429
     threading.Thread(target=run_task, args=(task, d.get("from","?"),
                      d.get("system",""), d.get("max_tokens",600), d.get("type","")),
                      daemon=True).start()
@@ -397,14 +405,17 @@ def codegen():
     task = d.get("task","").strip()
     lang = d.get("lang","python")
     if not task: return jsonify({"error":"task required"}), 400
-    if st.status == "WORKING": return jsonify({"error":"busy"}), 429
-    ts = datetime.now().strftime("%H:%M:%S")
-    console.print(Rule(f"[cyan]codegen  {ts}[/cyan]"))
-    result = llm(task, system=f"Output {lang} code only. No explanation. No markdown fences.\n",
-                 max_tokens=700)
-    console.print(Panel(result, title="[cyan]code[/cyan]", border_style="cyan"))
-    st.count += 1
-    mem.record(st.count, task, result[:200])
+    if st.status == "WORKING":
+        q = get_queue()
+        qt = QueuedTask(task_id=str(uuid.uuid4())[:8], task=task, sender=d.get("from","?"),
+                        system=f"Output {lang} code only. No explanation. No markdown fences.\n",
+                        max_tokens=700, explicit_type="codegen")
+        if q.enqueue(qt):
+            return jsonify({"queued": True, "position": q.size, "task": task[:80]}), 202
+        return jsonify({"error":"queue_full"}), 429
+    result = run_task(task, d.get("from","?"),
+                      system=f"Output {lang} code only. No explanation. No markdown fences.\n",
+                      max_tokens=700, explicit_type="codegen")
     return jsonify({"code": result, "lang": lang})
 
 @app.route("/condense", methods=["POST"])
@@ -607,51 +618,90 @@ def note():
 # ── main ─────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    import json as _json
     import logging as _log
-    _log.getLogger("werkzeug").setLevel(_log.WARNING)
 
-    _log.basicConfig(
-        level=_log.INFO,
-        format='%(asctime)s [%(levelname)s] %(message)s',
-        handlers=[
-            _log.FileHandler(Path(__file__).parent / "miser.log"),
-            _log.StreamHandler(),
-        ]
-    )
     _log.getLogger("werkzeug").setLevel(_log.WARNING)
+    LOG_FORMAT = os.environ.get("MISER_LOG_FORMAT", "text")  # review #29
 
-    _log.info(f"Miser v1.3 starting on port {PORT} (model={MODEL})")
+    class JsonFormatter(_log.Formatter):
+        def format(self, record):
+            entry = {
+                "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                "level": record.levelname,
+                "message": record.getMessage(),
+                "module": record.name,
+                "version": "1.3.1",
+            }
+            if record.exc_info and record.exc_info[0]:
+                import traceback
+                entry["traceback"] = "".join(traceback.format_exception(*record.exc_info))
+            return _json.dumps(entry, ensure_ascii=False)
+
+    handlers = [_log.FileHandler(Path(__file__).parent / "miser.log"), _log.StreamHandler()]
+    if LOG_FORMAT == "json":
+        for h in handlers:
+            h.setFormatter(JsonFormatter())
+    else:
+        fmt = _log.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+        for h in handlers:
+            h.setFormatter(fmt)
+
+    _log.basicConfig(level=_log.INFO, handlers=handlers, force=True)
+    _log.info(f"Starting on port {PORT} model={MODEL} log_format={LOG_FORMAT}")
 
     threading.Thread(
         target=lambda: app.run(host="0.0.0.0", port=PORT),
         daemon=True
     ).start()
 
+    # v1.3.1: graceful shutdown (review #30)
+    _shutdown_flag = threading.Event()
+
+    def _handle_shutdown(sig, frame):
+        _log.info(f"Received signal {sig}, draining queue...")
+        _shutdown_flag.set()
+        q = get_queue()
+        drained = 0
+        while q.size > 0:
+            task = q.dequeue()
+            if task:
+                run_task(task.task, task.sender, task.system, task.max_tokens, task.explicit_type)
+                drained += 1
+        _log.info(f"Graceful shutdown complete. Drained {drained} queued tasks.")
+        import sys
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _handle_shutdown)
+    signal.signal(signal.SIGINT, _handle_shutdown)
+
     def _warmup():
-        """Pre-load the LLM into memory so it's ready on first real request."""
         time.sleep(3)
         try:
             payload = adapter.generate_payload("", "ok", max_tokens=1)
             req.post(adapter.url, json=payload, timeout=60)
+            _log.info("LLM warmed up")
             console.print("[dim green]✓ LLM warmed up[/dim green]")
         except Exception:
             pass
     threading.Thread(target=_warmup, daemon=True).start()
 
     auth_note = "[yellow]AUTH enabled[/yellow]" if AUTH_TOKEN else "no auth"
+    log_note = f"JSON" if LOG_FORMAT == "json" else "text"
     console.print(Panel(
-        "[bold cyan]Miser v1.3[/bold cyan]  ·  Claude Code's local co-processor\n\n"
+        "[bold cyan]Miser v1.3.1[/bold cyan]  ·  Claude Code's local co-processor\n\n"
         "[bold]Zero-LLM endpoints (<50ms):[/bold]\n"
         "  [green]/run /read /grep /outline /tree /exists /write /patch[/green]\n\n"
         "[bold]Local-LLM endpoints (0 API tokens):[/bold]\n"
         "  [cyan]/ask /summarize /codegen /explain /fix /test /review /git_summary /batch[/cyan]\n\n"
         f"[bold]Model:[/bold]  {MODEL}  (family: {adapter.family})\n"
-        f"[bold]Auth:[/bold]   {auth_note}\n"
+        f"[bold]Auth:[/bold]   {auth_note}    [bold]Log:[/bold] {log_note}\n"
         f"[bold]Memory:[/bold] {len(mem.notes)} notes · {len(mem.history)} past tasks\n"
         "[dim]http://localhost:7860[/dim]",
         border_style="cyan", title="[bold]Ready[/bold]"
     ))
+    _log.info("Ready. Waiting for connections...")
     console.print("[green]✓ Waiting...[/green]\n")
 
-    while True:
+    while not _shutdown_flag.is_set():
         time.sleep(1)

@@ -5,6 +5,8 @@ Replaces the naive "return 429 when busy" with a bounded FIFO queue.
 Prevents request loss under concurrent load (review: commercialization P0).
 """
 
+from __future__ import annotations
+
 import threading, time, uuid
 from collections import deque
 from dataclasses import dataclass, field
