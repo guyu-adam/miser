@@ -1,0 +1,10 @@
+{
+  "name": "miser-client",
+  "version": "1.4.0",
+  "description": "JavaScript SDK for Miser — the local co-processor for AI coding assistants",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "license": "MIT",
+  "keywords": ["claude-code", "token-saver", "ollama", "local-llm", "coding-agent"],
+  "files": ["index.js", "index.d.ts", "README.md"]
+}

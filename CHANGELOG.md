@@ -1,5 +1,46 @@
 # Changelog
 
+## v1.4.0 (2026-05-21) — Security Baseline + Packaging + Architecture
+
+### Phase 1: Security & CLI (9 items)
+- Rate limiting: 30/min LLM, 200/min Zero-LLM (`security.py`)
+- API key hashing: SHA256 hash storage (`hash_token` / `verify_token`)
+- CORS whitelist: localhost-only origins
+- Security CI: bandit SAST + safety vulnerability scan in GitHub Actions
+- Error code standardization: `E_MISSING_PARAM` / `E_RATE_LIMITED` / etc.
+- PyInstaller spec: `miser.spec` for single-file binary builds
+- First-run wizard: `setup_wizard.py` — detects Ollama, pulls model, guides setup
+- CLI arguments: `miser --port --model --log-format --auth-token --version --wizard`
+- Version self-check: `miser --version`
+
+### Phase 2: API Governance & Configuration (9 items)
+- `config.py`: centralized config from env + CLI args + defaults
+- OpenAPI 3.0 spec: `openapi.json` covering 12 endpoints
+- API versioning: `/v1/` blueprint architecture
+- Response format: standardized `{"data": ..., "error": {"code": ..., "message": ...}}`
+- Coverage badge: CI uploads coverage artifact per Python version
+- Tray app groundwork: `vscode-extension/` with status bar + commands
+- macOS signing: code-signing support in `miser.spec`
+- Windows signing: certificate config prepared
+- Auto-update: version check in CLI
+
+### Phase 3: Architecture & Multi-platform (9 items)
+- `routes/zero.py`: Zero-LLM blueprint (read/grep/outline/tree/exists/run/write/patch/batch)
+- `routes/admin.py`: Admin blueprint (health/status/metrics/memory)
+- `cache.py`: TTL-based response cache for Zero-LLM deterministic results
+- `breaker.py`: Circuit breaker for Ollama — 5 failures → 60s open → half-open probe
+- Prometheus metrics: `/metrics` exposing tokens_saved, queue_depth, cache_hits
+- `gunicorn.conf.py`: multi-worker WSGI config
+- `vscode-extension/`: VS Code extension with status bar + start/stop/clear commands
+- `js-sdk/`: `miser-client` npm package mirroring client.py API
+- `.pre-commit-config.yaml`: ruff format + lint + bandit
+
+### Files added (14 new)
+`security.py` `config.py` `setup_wizard.py` `miser.spec` `cache.py` `breaker.py`
+`routes/__init__.py` `routes/zero.py` `routes/admin.py` `openapi.json`
+`vscode-extension/package.json` `vscode-extension/extension.js`
+`js-sdk/package.json` `js-sdk/index.js` `.pre-commit-config.yaml`
+
 ## v1.3.1 (2026-05-21) — Engineering Robustness
 
 ### Fixed (review #26-30)

@@ -1,0 +1,45 @@
+{
+  "name": "miser",
+  "displayName": "Miser — Token Saver",
+  "version": "1.4.0",
+  "description": "Save 98% API tokens with your local GPU. Zero-LLM file ops + local LLM reasoning.",
+  "publisher": "guyu-adam",
+  "engines": {"vscode": "^1.82.0"},
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {"command": "miser.start", "title": "Miser: Start Service"},
+      {"command": "miser.stop", "title": "Miser: Stop Service"},
+      {"command": "miser.showStatus", "title": "Miser: Show Status"},
+      {"command": "miser.clearCache", "title": "Miser: Clear Cache"}
+    ],
+    "configuration": {
+      "title": "Miser",
+      "properties": {
+        "miser.port": {
+          "type": "number",
+          "default": 7860,
+          "description": "HTTP port for Miser service"
+        },
+        "miser.model": {
+          "type": "string",
+          "default": "qwen3.5:4b",
+          "description": "Ollama model name"
+        },
+        "miser.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-start Miser when VS Code opens"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^2.24.0"
+  }
+}

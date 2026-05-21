@@ -1,11 +1,11 @@
 """
-Miser v1.3 — Claude Code's local co-processor.
+Miser v1.4 — Claude Code's local co-processor.
 Two execution paths:
   1. Zero-LLM (<50ms): shell, file read/write/grep/tree/exists/outline/patch
   2. Local LLM (no API cost): summarize, codegen, explain, fix, test, review, git_summary
 """
 
-import os, re, threading, time, signal, uuid
+import os, re, threading, time, signal, uuid, sys
 from datetime import datetime
 from pathlib import Path
 
@@ -28,17 +28,33 @@ from tools import (
 from prefetch import observe_access, get_stats as prefetch_stats
 from condenser import distill, condensation_ratio
 from task_queue import get_queue, QueuedTask
+from security import (
+    rate_limit_middleware, cors_middleware, hash_token, verify_token,
+    error_response,
+)
+from config import resolve as resolve_config
+from cache import cache_stats
+from breaker import ollama_breaker
 
 console = Console()
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024   # 5MB (v1.3.1 P1)
 
-MODEL = os.environ.get("MISER_MODEL", "miser-qwen")
-AUTH_TOKEN = os.environ.get("MISER_AUTH_TOKEN", "")   # review item #4
-PORT = int(os.environ.get("MISER_PORT", "7860"))        # review item #16: optional token
+# Module-level: env-only (safe for test imports). CLI resolved in __main__.
+cfg = resolve_config(argv=[])
+MODEL = cfg["model"]
+AUTH_TOKEN = cfg["auth_token"]
+PORT = cfg["port"]
+LOG_FORMAT = cfg["log_format"]
+AUTH_HASH = hash_token(AUTH_TOKEN) if AUTH_TOKEN else ""
 
 adapter = ModelAdapter(MODEL)
 mem = Memory()
+
+import routes.admin as _admin
+_admin.MODEL = MODEL
+_admin.ADAPTER = adapter
+_admin.MEM = mem
 
 # ── state ───────────────────────────────────────────────────────────────────────
 
@@ -59,11 +75,11 @@ st = State()
 # ── auth helper (review item #4) ────────────────────────────────────────────────
 
 def _check_auth(req_data: dict) -> bool:
-    """If AUTH_TOKEN is configured, require it in every request."""
-    if not AUTH_TOKEN:
+    """If AUTH_TOKEN is configured, require it in every request. (Phase 1 #2: hashed comparison)"""
+    if not AUTH_HASH:
         return True
     token = (req_data or {}).get("_token", "")
-    return token == AUTH_TOKEN
+    return verify_token(token, AUTH_HASH)
 
 # ── LLM call ────────────────────────────────────────────────────────────────────
 
@@ -621,8 +637,31 @@ if __name__ == "__main__":
     import json as _json
     import logging as _log
 
+    # Re-resolve with CLI args (Phase 1 #8)
+    cli_cfg = resolve_config(argv=sys.argv[1:])
+    MODEL = cli_cfg["model"]
+    AUTH_TOKEN = cli_cfg["auth_token"]
+    PORT = cli_cfg["port"]
+    LOG_FORMAT = cli_cfg["log_format"]
+    AUTH_HASH = hash_token(AUTH_TOKEN) if AUTH_TOKEN else ""
+
+    # Version + wizard handling (Phase 1 #8, #9)
+    cli = cli_cfg["_cli"]
+    if cli.version:
+        print(f"Miser v1.4.0")
+        sys.exit(0)
+    if cli.wizard:
+        from setup_wizard import wizard as _wizard
+        _wizard()
+        sys.exit(0)
+
+    # Update admin + security with resolved values
+    _admin.MODEL = MODEL
+    _admin.ADAPTER = adapter
+    _admin.MEM = mem
+
+    # Structured logging (Phase 1 #2: JSON mode)
     _log.getLogger("werkzeug").setLevel(_log.WARNING)
-    LOG_FORMAT = os.environ.get("MISER_LOG_FORMAT", "text")  # review #29
 
     class JsonFormatter(_log.Formatter):
         def format(self, record):
@@ -631,7 +670,7 @@ if __name__ == "__main__":
                 "level": record.levelname,
                 "message": record.getMessage(),
                 "module": record.name,
-                "version": "1.3.1",
+                "version": "1.4.0",
             }
             if record.exc_info and record.exc_info[0]:
                 import traceback
@@ -648,18 +687,28 @@ if __name__ == "__main__":
             h.setFormatter(fmt)
 
     _log.basicConfig(level=_log.INFO, handlers=handlers, force=True)
-    _log.info(f"Starting on port {PORT} model={MODEL} log_format={LOG_FORMAT}")
+    _log.info(f"Starting v1.4.0 port={PORT} model={MODEL} log={LOG_FORMAT}")
+
+    # Register security middleware (Phase 1 #1, #3)
+    app.before_request(rate_limit_middleware)
+    app.after_request(cors_middleware)
+
+    # Register route blueprints (Phase 3 #19)
+    from routes.zero import zero as _zero_bp
+    from routes.admin import admin as _admin_bp
+    app.register_blueprint(_zero_bp)
+    app.register_blueprint(_admin_bp)
 
     threading.Thread(
         target=lambda: app.run(host="0.0.0.0", port=PORT),
         daemon=True
     ).start()
 
-    # v1.3.1: graceful shutdown (review #30)
+    # Graceful shutdown (Phase 1 #3)
     _shutdown_flag = threading.Event()
 
     def _handle_shutdown(sig, frame):
-        _log.info(f"Received signal {sig}, draining queue...")
+        _log.info(f"Signal {sig}, draining queue...")
         _shutdown_flag.set()
         q = get_queue()
         drained = 0
@@ -668,8 +717,7 @@ if __name__ == "__main__":
             if task:
                 run_task(task.task, task.sender, task.system, task.max_tokens, task.explicit_type)
                 drained += 1
-        _log.info(f"Graceful shutdown complete. Drained {drained} queued tasks.")
-        import sys
+        _log.info(f"Shutdown complete. Drained {drained} tasks.")
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, _handle_shutdown)
@@ -687,20 +735,21 @@ if __name__ == "__main__":
     threading.Thread(target=_warmup, daemon=True).start()
 
     auth_note = "[yellow]AUTH enabled[/yellow]" if AUTH_TOKEN else "no auth"
-    log_note = f"JSON" if LOG_FORMAT == "json" else "text"
+    log_note = "json" if LOG_FORMAT == "json" else "text"
     console.print(Panel(
-        "[bold cyan]Miser v1.3.1[/bold cyan]  ·  Claude Code's local co-processor\n\n"
+        "[bold cyan]Miser v1.4[/bold cyan]  ·  Claude Code's local co-processor\n\n"
         "[bold]Zero-LLM endpoints (<50ms):[/bold]\n"
-        "  [green]/run /read /grep /outline /tree /exists /write /patch[/green]\n\n"
+        "  [green]/v1/read /v1/grep /v1/outline /v1/tree /v1/exists /v1/run /v1/write /v1/patch[/green]\n\n"
         "[bold]Local-LLM endpoints (0 API tokens):[/bold]\n"
-        "  [cyan]/ask /summarize /codegen /explain /fix /test /review /git_summary /batch[/cyan]\n\n"
+        "  [cyan]/v1/ask /v1/codegen /v1/explain /v1/fix /v1/test /v1/review /v1/summarize /v1/git_summary /v1/batch[/cyan]\n\n"
+        "[bold]Admin endpoints:[/bold]\n"
+        "  [magenta]/health /status /metrics /memory /openapi.json[/magenta]\n\n"
         f"[bold]Model:[/bold]  {MODEL}  (family: {adapter.family})\n"
-        f"[bold]Auth:[/bold]   {auth_note}    [bold]Log:[/bold] {log_note}\n"
-        f"[bold]Memory:[/bold] {len(mem.notes)} notes · {len(mem.history)} past tasks\n"
+        f"[bold]Auth:[/bold]   {auth_note}  [bold]Log:[/bold] {log_note}  [bold]Rate:[/bold] {cli_cfg['rate_llm']}/{cli_cfg['rate_zero']}/min\n"
         "[dim]http://localhost:7860[/dim]",
         border_style="cyan", title="[bold]Ready[/bold]"
     ))
-    _log.info("Ready. Waiting for connections...")
+    _log.info("Ready.")
     console.print("[green]✓ Waiting...[/green]\n")
 
     while not _shutdown_flag.is_set():

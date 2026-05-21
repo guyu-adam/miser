@@ -1,4 +1,4 @@
-name: Test
+name: Test & Security
 
 on:
   push:
@@ -24,6 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -e ".[dev]"
+          pip install bandit safety
 
       - name: Run tests
         run: |
@@ -34,3 +35,22 @@ jobs:
         with:
           name: coverage-py${{ matrix.python-version }}
           path: .coverage
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install security tools
+        run: pip install bandit safety
+
+      - name: Bandit — SAST scan
+        run: bandit -r . -ll --skip B101,B404,B603 -x tests,vscode-extension,js-sdk
+
+      - name: Safety — dependency vulnerability scan
+        run: safety check --bare

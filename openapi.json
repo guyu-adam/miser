@@ -1,0 +1,150 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Miser API",
+    "version": "1.4.0",
+    "description": "Local co-processor for AI coding assistants — save 98% API tokens with your local GPU"
+  },
+  "servers": [{"url": "http://localhost:7860/v1", "description": "Local server"}],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "responses": {"200": {"description": "OK"}}
+      }
+    },
+    "/read": {
+      "post": {
+        "summary": "Read a file",
+        "requestBody": {
+          "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {
+              "path": {"type": "string", "description": "File path (supports ~)"},
+              "limit": {"type": "integer", "default": 8000}
+            },
+            "required": ["path"]
+          }}}
+        },
+        "responses": {
+          "200": {"description": "File content"},
+          "400": {"description": "Missing path parameter"}
+        }
+      }
+    },
+    "/grep": {
+      "post": {
+        "summary": "Search file with context",
+        "requestBody": {
+          "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {
+              "path": {"type": "string"},
+              "pattern": {"type": "string", "description": "Regex pattern"},
+              "context": {"type": "integer", "default": 2},
+              "ignore_case": {"type": "boolean", "default": true}
+            },
+            "required": ["path", "pattern"]
+          }}}
+        },
+        "responses": {"200": {"description": "Matching lines with context"}}
+      }
+    },
+    "/outline": {
+      "post": {
+        "summary": "Extract function/class outline from source file",
+        "requestBody": {
+          "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"]
+          }}}
+        },
+        "responses": {"200": {"description": "Structured code outline"}}
+      }
+    },
+    "/tree": {
+      "post": {
+        "summary": "Directory tree view",
+        "requestBody": {
+          "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {
+              "path": {"type": "string", "default": "~/Desktop"},
+              "depth": {"type": "integer", "default": 2}
+            }
+          }}}
+        },
+        "responses": {"200": {"description": "Directory tree string"}}
+      }
+    },
+    "/exists": {
+      "post": {
+        "summary": "Check file existence",
+        "requestBody": {
+          "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"]
+          }}}
+        },
+        "responses": {"200": {"description": "Existence, type, size info"}}
+      }
+    },
+    "/ask": {
+      "post": {
+        "summary": "General-purpose local LLM task",
+        "requestBody": {
+          "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {
+              "task": {"type": "string", "description": "Natural language task description"},
+              "max_tokens": {"type": "integer", "default": 600}
+            },
+            "required": ["task"]
+          }}}
+        },
+        "responses": {
+          "200": {"description": "LLM result"},
+          "202": {"description": "Queued for processing"},
+          "429": {"description": "Rate limited or queue full"}
+        }
+      }
+    },
+    "/batch": {
+      "post": {
+        "summary": "Execute multiple operations in one request",
+        "requestBody": {
+          "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {
+              "tasks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {"type": "string", "enum": ["run","read","grep","outline","tree","exists","write","ask"]}
+                  }
+                }
+              }
+            },
+            "required": ["tasks"]
+          }}}
+        },
+        "responses": {"200": {"description": "Array of results"}}
+      }
+    },
+    "/status": {
+      "get": {
+        "summary": "Server status and statistics",
+        "responses": {"200": {"description": "Status, model, tokens saved, queue stats"}}
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "Prometheus metrics endpoint",
+        "responses": {"200": {"description": "Prometheus text format", "content": {"text/plain": {}}}}
+      }
+    }
+  }
+}
