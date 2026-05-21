@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Miser v1.0 installer.
+# Miser v1.3 installer.
 # Installs dependencies, pulls the model, registers a background service,
 # and patches ~/.claude/CLAUDE.md so Claude Code uses Miser automatically.
 #
@@ -16,7 +16,7 @@ red()    { echo -e "\033[31m$*\033[0m"; }
 bold()   { echo -e "\033[1m$*\033[0m"; }
 
 bold "╔══════════════════════════════╗"
-bold "║   Miser v1.0  —  Installer   ║"
+bold "║   Miser v1.3  —  Installer   ║"
 bold "╚══════════════════════════════╝"
 echo ""
 
@@ -142,7 +142,7 @@ bash "$MISER_DIR/start.sh"
 
 echo ""
 bold "╔══════════════════════════════════════╗"
-bold "║   Miser v1.0 installed successfully  ║"
+bold "║   Miser v1.3 installed successfully  ║"
 bold "╚══════════════════════════════════════╝"
 echo "  Server : http://localhost:7860"
 echo "  Logs   : /tmp/miser.log"

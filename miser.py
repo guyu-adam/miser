@@ -1,5 +1,5 @@
 """
-Miser v1.2 — Claude Code's local co-processor.
+Miser v1.3 — Claude Code's local co-processor.
 Two execution paths:
   1. Zero-LLM (<50ms): shell, file read/write/grep/tree/exists/outline/patch
   2. Local LLM (no API cost): summarize, codegen, explain, fix, test, review, git_summary
@@ -27,6 +27,7 @@ from tools import (
 )
 from prefetch import observe_access, get_stats as prefetch_stats
 from condenser import distill, condensation_ratio
+from queue import get_queue, QueuedTask
 
 console = Console()
 app = Flask(__name__)
@@ -170,6 +171,17 @@ def run_task(task: str, sender: str, system: str = "", max_tokens: int = 600,
         console.print(Panel(result, title="[red]✗[/red]", border_style="red"))
     finally:
         st.set("IDLE", "—")
+        # v1.3: drain queued tasks (commercialization P0)
+        q = get_queue()
+        next_task = q.dequeue()
+        if next_task:
+            threading.Thread(
+                target=run_task,
+                args=(next_task.task, next_task.sender,
+                      next_task.system, next_task.max_tokens,
+                      next_task.explicit_type),
+                daemon=True
+            ).start()
     return result
 
 # ── endpoints ────────────────────────────────────────────────────────────────────
@@ -177,9 +189,23 @@ def run_task(task: str, sender: str, system: str = "", max_tokens: int = 600,
 def _auth_fail():
     return jsonify({"error": "unauthorized — MISER_AUTH_TOKEN required"}), 401
 
+@app.route("/health")
+def health():
+    """Health check endpoint (commercialization P0)."""
+    q = get_queue()
+    return jsonify({
+        "status": "ok",
+        "version": "1.3.0",
+        "model": MODEL,
+        "model_family": adapter.family,
+        "worker": st.status,
+        "queue_size": q.size,
+    })
+
 @app.route("/status")
 def status():
     pref = prefetch_stats()
+    q = get_queue()
     return jsonify({
         "status":           st.status,
         "task":             st.task,
@@ -189,6 +215,7 @@ def status():
         "model":            MODEL,
         "model_family":     adapter.family,
         "prefetch":         pref,
+        "queue":            q.stats,
     })
 
 @app.route("/memory")
@@ -198,10 +225,21 @@ def memory():
 @app.route("/ask", methods=["POST"])
 def ask():
     d = request.json or {}
-    if not _check_auth(d): return _auth_fail()       # review item #4
+    if not _check_auth(d): return _auth_fail()
     task = d.get("task","").strip()
     if not task: return jsonify({"error":"task required"}), 400
-    if st.status == "WORKING": return jsonify({"error":"busy"}), 429
+    if st.status == "WORKING":
+        # v1.3: queue instead of rejecting (commercialization P0)
+        q = get_queue()
+        qt = QueuedTask(
+            task_id=str(id(d)),
+            task=task, sender=d.get("from","?"),
+            system=d.get("system",""), max_tokens=d.get("max_tokens",600),
+            explicit_type=d.get("type","ask"),
+        )
+        if q.enqueue(qt):
+            return jsonify({"queued": True, "position": q.size, "task": task[:80]}), 202
+        return jsonify({"error":"queue_full", "retry_in": 5}), 429
     result = run_task(task, d.get("from","?"), d.get("system",""),
                       d.get("max_tokens",600), d.get("type","ask"))
     ok = not result.startswith("ERROR:")
@@ -582,7 +620,7 @@ if __name__ == "__main__":
     )
     _log.getLogger("werkzeug").setLevel(_log.WARNING)
 
-    _log.info(f"Miser v1.2 starting on port {PORT} (model={MODEL})")
+    _log.info(f"Miser v1.3 starting on port {PORT} (model={MODEL})")
 
     threading.Thread(
         target=lambda: app.run(host="0.0.0.0", port=PORT),
@@ -602,7 +640,7 @@ if __name__ == "__main__":
 
     auth_note = "[yellow]AUTH enabled[/yellow]" if AUTH_TOKEN else "no auth"
     console.print(Panel(
-        "[bold cyan]Miser v1.2[/bold cyan]  ·  Claude Code's local co-processor\n\n"
+        "[bold cyan]Miser v1.3[/bold cyan]  ·  Claude Code's local co-processor\n\n"
         "[bold]Zero-LLM endpoints (<50ms):[/bold]\n"
         "  [green]/run /read /grep /outline /tree /exists /write /patch[/green]\n\n"
         "[bold]Local-LLM endpoints (0 API tokens):[/bold]\n"

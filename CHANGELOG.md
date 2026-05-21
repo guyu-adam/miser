@@ -1,0 +1,77 @@
+# Changelog
+
+## v1.3.0 (2026-05-21) — Commercialization Stage 1
+
+### Added
+- `/health` endpoint for service monitoring (P0)
+- `queue.py`: bounded FIFO request queue replacing naive 429 rejection (P0)
+- Structured logging with dual file+console output (P0)
+- GitHub Actions CI workflow (Python 3.10–3.13, pytest + coverage) (P0)
+- `conftest.py`: shared test path setup
+
+### Changed
+- `/ask` endpoint: enqueues tasks when busy instead of returning 429
+- Queue auto-drains pending tasks when worker goes idle
+- `/status` now includes queue statistics
+- `install.sh` version updated from v1.0 → v1.3
+- `MISER_PORT` env var for configurable port
+
+### Fixed
+- Duplicate `import logging` in `miser.py` (#22)
+- `sys.path.insert` hack removed from test files (#23)
+- `condenser.py` chunk merge deduplication (#24)
+- `prefetch.py` hit rate uses real timestamp comparison (#19)
+
+## v1.2.0 (2026-05-21) — Engineering Foundations
+
+### Added
+- `tests/` directory: 43 pytest cases (3 modules)
+- `pyproject.toml` with setuptools config, dev extras, pytest settings
+- Multi-language `outline_file` (JS/TS/Go/Rust/Java/Ruby/Shell/SQL + Python)
+- Windows Quick Start instructions in README
+- `condenser.py` content chunking (6K + 500 overlap) + retry logic
+- `prefetch.py` timestamp-based hit detection
+- `miser.log` file logging with console dual output
+
+### Changed
+- README benchmark numbers labeled `~estimated`
+- Port made configurable via `MISER_PORT` env var
+- `import logging` merged into single `import logging as _log`
+
+## v1.1.0 (2026-05-21) — Quality & Competitor Features
+
+### Added
+- `quality.py`: CRITICAL/STANDARD/SAFE operation classifier
+- `adaptive.py`: self-learning per-category success rate tracker
+- `prefetch.py`: Markov-chain file access predictor
+- `condenser.py`: semantic context distillation via local LLM
+- `/condense` endpoint with savings statistics
+- `MISER_AUTH_TOKEN` optional authentication
+
+### Changed
+- `eval()` replaced with `_safe_eval()` AST-based evaluator
+- `shell=True` commands validated via `DANGEROUS_SHELL_PATTERNS`
+- `_tokens_saved` protected by `threading.Lock`
+- Context mismatch threshold: 0.05 → 0.15
+- Memory notes capped at MAX_NOTES=200
+- Batch LLM tasks capped at 3
+
+### Split
+- `miser.py` (726 lines) → `miser.py` + `tools.py` + `memory.py`
+- Regex routing → `EXPLICIT_ROUTES` dict + `FALLBACK_ROUTES`
+- i18n patterns extracted to `I18N_PATTERNS` config
+
+### Removed
+- Flask `threaded=True` deprecated parameter
+
+## v1.0.0 (2026-05-11) — Initial Release
+
+### Added
+- Zero-LLM ops: `/read`, `/grep`, `/outline`, `/tree`, `/exists`, `/run`, `/write`, `/patch`
+- Local-LLM ops: `/ask`, `/codegen`, `/explain`, `/fix`, `/test`, `/review`, `/summarize`, `/git_summary`
+- `/batch` endpoint for multi-op round-trips
+- `model_adapter.py`: 17 model families support
+- `client.py` Python SDK with supervision layer
+- `memory.py` key-value store with semantic search
+- `install.sh` with systemd/launchd service registration
+- 62-test validation suite (TEST_REPORT.md)
