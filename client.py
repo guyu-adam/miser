@@ -222,6 +222,20 @@ class _W:
             result = _check_llm(result, "review", context=ctx)
         return self._wrap(result, path_or_code, "review", "miser-llm")
 
+    def condense(self, path_or_text, category="code_file", max_tokens=300):
+        """Semantically distill a large file or text into a structured digest.
+        Local LLM extracts: signatures, dependencies, invariants, edge cases.
+        Returns digest + savings stats. Saves 70-90% tokens vs full read."""
+        key = "path" if ("/" in path_or_text or "~" in path_or_text) else "text"
+        d = _post("/condense", {key: path_or_text, "category": category,
+                                "max_tokens": max_tokens})
+        result = d.get("digest") or d.get("error")
+        savings = d.get("savings", {})
+        # Attach savings for the caller
+        if isinstance(result, str) and savings:
+            self._last_condense_savings = savings
+        return result
+
     def git_summary(self, path=".", n=10):
         d = _post("/git_summary", {"path": path, "n": n})
         result = d.get("summary") or d.get("error")

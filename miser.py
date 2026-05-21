@@ -25,6 +25,8 @@ from tools import (
     write_to_file, patch_file, extract_path, _safe_eval,
     count_saved, get_tokens_saved, I18N_PATTERNS,
 )
+from prefetch import observe_access, get_stats as prefetch_stats
+from condenser import distill, condensation_ratio
 
 console = Console()
 app = Flask(__name__)
@@ -176,14 +178,16 @@ def _auth_fail():
 
 @app.route("/status")
 def status():
+    pref = prefetch_stats()
     return jsonify({
         "status":           st.status,
         "task":             st.task,
         "count":            st.count,
         "last":             st.result,
-        "tokens_saved_est": get_tokens_saved(),      # review item #3: thread-safe
+        "tokens_saved_est": get_tokens_saved(),
         "model":            MODEL,
         "model_family":     adapter.family,
+        "prefetch":         pref,
     })
 
 @app.route("/memory")
@@ -238,6 +242,7 @@ def read_file_ep():
     if not path: return jsonify({"error":"path required"}), 400
     content = read_file(path, d.get("limit", 8000))
     count_saved(len(content))
+    observe_access(path)
     console.print(Rule(f"[green]read  {path}[/green]"))
     return jsonify({"content": content, "path": path})
 
@@ -263,6 +268,7 @@ def outline():
     console.print(Rule(f"[green]outline  {ts}[/green]"))
     result = outline_file(path)
     count_saved(len(read_file(path, 99999)) - len(result))
+    observe_access(path)
     console.print(f"[dim]{result[:400]}[/dim]")
     return jsonify({"outline": result, "path": path})
 
@@ -361,6 +367,43 @@ def codegen():
     st.count += 1
     mem.record(st.count, task, result[:200])
     return jsonify({"code": result, "lang": lang})
+
+@app.route("/condense", methods=["POST"])
+def condense():
+    """Semantically distill a large context using local LLM.
+    Returns a structured digest + savings stats.
+    Unlike prompt compression, this preserves semantic meaning."""
+    d = request.json or {}
+    if "path" in d:
+        content = read_file(d["path"], limit=10000)
+        category = "code_file"
+        label = d["path"]
+        observe_access(d["path"])
+    elif "text" in d:
+        content = d["text"][:10000]
+        category = d.get("category", "code_file")
+        label = "text"
+    else:
+        return jsonify({"error": "path or text required"}), 400
+
+    if content.startswith("File not found"):
+        return jsonify({"error": content}), 404
+
+    ts = datetime.now().strftime("%H:%M:%S")
+    console.print(Rule(f"[cyan]condense  {ts}[/cyan]"))
+    console.print(f"[dim]Distilling {len(content)} chars as [{category}]...[/dim]")
+
+    result = distill(content, category, MODEL, d.get("max_tokens", 300))
+    stats = condensation_ratio(content, result)
+    count_saved(stats["tokens_saved"])
+
+    console.print(Panel(result[:600], title="[cyan]condensed[/cyan]", border_style="cyan"))
+    return jsonify({
+        "digest": result,
+        "source": label,
+        "category": category,
+        "savings": stats,
+    })
 
 @app.route("/explain", methods=["POST"])
 def explain():
