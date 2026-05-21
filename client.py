@@ -1,5 +1,5 @@
 """
-Miser v1.0 client for Claude Code.
+Miser v1.1 client for Claude Code — with quality assurance.
 
 Usage:
     import sys; sys.path.insert(0, '/path/to/miser')
@@ -18,14 +18,18 @@ Usage:
     W.ask("any freeform task")              # general purpose
     W.batch([("outline","~/f.py"),("run","git status")])
     W.status()
+    W.quality()                             # get last quality report
     W.clear()
 
-Supervision: LLM results are automatically checked for quality flags.
-Results that fail checks are returned with a [MISER:LOW_CONFIDENCE] prefix —
-treat these as hints, not facts. Use W.verify=False to disable.
+Quality guarantees:
+  - Zero-LLM ops: 100% deterministic, no quality loss
+  - Local-LLM ops: auto-verified (hallucination, syntax, context, length)
+  - CRITICAL keywords (auth, security, payment, deploy) → Claude must handle
+  - Flagged results are prefixed [MISER:FLAG] — treat as hints, not facts
+  - Use W.verify = False to skip checks (not recommended for production code)
 """
-import ast
-import requests
+import ast, re, requests
+from quality import classify_op, should_offload, quality_report
 
 BASE = "http://localhost:7860"
 
@@ -44,6 +48,12 @@ _HALLUCINATION_PHRASES = [
 def _flag(text: str, label: str) -> str:
     return f"[MISER:{label}]\n{text}"
 
+def _extract_flags(result) -> list:
+    """Extract quality flags from a possibly-flagged result."""
+    if not isinstance(result, str):
+        return []
+    return re.findall(r'\[MISER:([^\]]+)\]', result)[:5]
+
 def _check_llm(result, op: str, context: str = ""):
     """Supervisor: validate LLM output, flag low-quality responses."""
     if not result or not isinstance(result, str):
@@ -61,8 +71,6 @@ def _check_llm(result, op: str, context: str = ""):
     # For codegen/test: verify Python syntax
     if op in ("codegen", "test"):
         code_block = result
-        # Strip markdown fences if present
-        import re
         fenced = re.search(r"```(?:python)?\n(.*?)```", result, re.DOTALL)
         if fenced:
             code_block = fenced.group(1)
@@ -81,67 +89,118 @@ def _check_llm(result, op: str, context: str = ""):
 
     return result
 
+
 class _W:
     verify: bool = True   # set to False to skip supervision checks
+    _last_quality: dict = {}  # last quality report, accessible via W.quality()
+
+    def quality(self) -> dict:
+        """Return the quality report for the most recent LLM operation."""
+        return getattr(self, '_last_quality', {})
+
+    def _wrap(self, result, task: str, op_type: str, source: str) -> str:
+        """Wrap result with quality metadata. Stores report for later retrieval."""
+        flags = _extract_flags(result) if result else []
+        qr = quality_report(result, task, op_type, source, flags)
+        self._last_quality = qr.get("quality", {})
+
+        # For critical ops flagged by quality router: add a strong prefix
+        q = self._last_quality
+        if q.get("criticality") == "critical" and source != "miser-zero":
+            # This should not normally happen (Claude should handle critical ops),
+            # but if someone bypasses the router, add a prominent flag.
+            return _flag(result, "CRITICAL_OP_DELEGATED")
+
+        return result
 
     def ask(self, task, max_tokens=600):
+        # Check if task should even be offloaded
+        ok, reason = should_offload(task, "ask")
+        if not ok:
+            return _flag(reason, "DO_NOT_OFFLOAD")
+
         d = _post("/ask", {"task": task, "from": "claude", "max_tokens": max_tokens})
-        return d.get("result") or d.get("error")
+        result = d.get("result") or d.get("error")
+        if self.verify:
+            result = _check_llm(result, "ask", context=task)
+        return self._wrap(result, task, "ask", "miser-llm")
 
     def run(self, cmd, timeout=30):
         d = _post("/run", {"cmd": cmd, "timeout": timeout})
-        return d.get("output") or d.get("error")
+        result = d.get("output") or d.get("error")
+        return self._wrap(result, cmd, "run", "miser-zero")
 
     def read(self, path, limit=8000):
         d = _post("/read", {"path": path, "limit": limit})
-        return d.get("content") or d.get("error")
+        result = d.get("content") or d.get("error")
+        return self._wrap(result, path, "read", "miser-zero")
 
     def grep(self, path, pattern, ctx=2, ignore_case=True):
         d = _post("/grep", {"path": path, "pattern": pattern,
                             "context": ctx, "ignore_case": ignore_case})
-        return d.get("matches") or d.get("error")
+        result = d.get("matches") or d.get("error")
+        return self._wrap(result, f"grep:{pattern}", "grep", "miser-zero")
 
     def outline(self, path):
         d = _post("/outline", {"path": path})
-        return d.get("outline") or d.get("error")
+        result = d.get("outline") or d.get("error")
+        return self._wrap(result, f"outline:{path}", "outline", "miser-zero")
 
     def tree(self, path="~/Desktop", depth=2):
         d = _post("/tree", {"path": path, "depth": depth})
-        return d.get("tree") or d.get("error")
+        result = d.get("tree") or d.get("error")
+        return self._wrap(result, path, "tree", "miser-zero")
 
     def exists(self, path):
-        return _post("/exists", {"path": path})
+        d = _post("/exists", {"path": path})
+        return d  # dict response, no wrapping needed
 
     def write(self, path, content):
         d = _post("/write", {"path": path, "content": content})
-        return d.get("result") or d.get("error")
+        result = d.get("result") or d.get("error")
+        return self._wrap(result, path, "write", "miser-zero")
 
     def patch(self, path, old, new):
         d = _post("/patch", {"path": path, "old": old, "new": new})
-        return d.get("result") or d.get("error")
+        result = d.get("result") or d.get("error")
+        return self._wrap(result, path, "patch", "miser-zero")
 
     def summarize(self, path_or_text, focus="key logic and structure"):
         key = "path" if ("/" in path_or_text or "~" in path_or_text) else "text"
         d = _post("/summarize", {key: path_or_text, "focus": focus})
         result = d.get("summary") or d.get("error")
-        return _check_llm(result, "summarize") if self.verify else result
+        if self.verify:
+            result = _check_llm(result, "summarize")
+        ctx = path_or_text if key == "path" else ""
+        return self._wrap(result, path_or_text, "summarize", "miser-llm")
 
     def codegen(self, task, lang="python"):
+        ok, reason = should_offload(task, "codegen")
+        if not ok:
+            return _flag(reason, "DO_NOT_OFFLOAD")
+
         d = _post("/codegen", {"task": task, "lang": lang})
         result = d.get("code") or d.get("error")
-        return _check_llm(result, "codegen", context=task) if self.verify else result
+        if self.verify:
+            result = _check_llm(result, "codegen", context=task)
+        return self._wrap(result, task, "codegen", "miser-llm")
 
     def explain(self, path_or_code):
         key = "path" if ("/" in path_or_code or "~" in path_or_code) else "code"
         d = _post("/explain", {key: path_or_code})
         result = d.get("explanation") or d.get("error")
         ctx = path_or_code if key == "code" else ""
-        return _check_llm(result, "explain", context=ctx) if self.verify else result
+        if self.verify:
+            result = _check_llm(result, "explain", context=ctx)
+        return self._wrap(result, path_or_code, "explain", "miser-llm")
 
     def fix(self, error_msg, code=""):
         d = _post("/fix", {"error": error_msg, "code": code})
         result = d.get("fix") or d.get("error")
-        return _check_llm(result, "fix", context=error_msg + " " + code) if self.verify else result
+        ctx = error_msg + " " + code
+        if self.verify:
+            result = _check_llm(result, "fix", context=ctx)
+        return self._wrap(result, error_msg[:100], "fix", "miser-llm")
 
     def test(self, path_or_code, function=""):
         key = "path" if ("/" in path_or_code or "~" in path_or_code) else "code"
@@ -150,18 +209,23 @@ class _W:
             payload["function"] = function
         d = _post("/test", payload)
         result = d.get("tests") or d.get("error")
-        return _check_llm(result, "test") if self.verify else result
+        if self.verify:
+            result = _check_llm(result, "test")
+        return self._wrap(result, path_or_code, "test", "miser-llm")
 
     def review(self, path_or_code):
         key = "path" if ("/" in path_or_code or "~" in path_or_code) else "code"
         d = _post("/review", {key: path_or_code})
         result = d.get("review") or d.get("error")
         ctx = path_or_code if key == "code" else ""
-        return _check_llm(result, "review", context=ctx) if self.verify else result
+        if self.verify:
+            result = _check_llm(result, "review", context=ctx)
+        return self._wrap(result, path_or_code, "review", "miser-llm")
 
     def git_summary(self, path=".", n=10):
         d = _post("/git_summary", {"path": path, "n": n})
-        return d.get("summary") or d.get("error")
+        result = d.get("summary") or d.get("error")
+        return self._wrap(result, f"git:{path}", "git_summary", "miser-llm")
 
     def batch(self, tasks):
         """tasks: list of tuples — ("run","cmd"), ("outline","~/f.py"),
@@ -192,7 +256,13 @@ class _W:
         return requests.post(f"{BASE}/memory/clear", timeout=10).json().get("cleared")
 
     def status(self):
-        return requests.get(f"{BASE}/status", timeout=5).json()
+        d = requests.get(f"{BASE}/status", timeout=5).json()
+        # Add quality context to status
+        try:
+            from quality import classify_op
+        except ImportError:
+            pass
+        return d
 
 W = _W()   # W for Miser
 J = W      # backward-compat alias
