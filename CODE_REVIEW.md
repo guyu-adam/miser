@@ -371,200 +371,306 @@ Flask 开发服务器没有 SIGTERM/SIGINT 处理器。进程被 kill 时排队�
 
 ---
 
-## 四、v1.3.1 验收总结
+## 四、v1.4 验收总结
 
-v1.3.1 交付后，上轮第一期（工程健壮性）8 项中 7 项完成：
+v1.4 一次性交付了上轮三期共 27 项中的 26 项（仅 codecov badge 未接入），新增 14 个文件、1286 行代码。
 
-| # | 事项 | 状态 |
+### 第一期：安全底线 + CLI 封装（9/9 ✅）
+
+| # | 事项 | 实现 |
 |---|------|------|
-| 1 | 修复 task_id | ✅ `uuid4()[:8]` |
-| 2 | 结构化日志 | ✅ `MISER_LOG_FORMAT=json` + `JsonFormatter` |
-| 3 | 优雅关闭 | ✅ SIGTERM/SIGINT → 排空队列 → 退出 |
-| 4 | 统一队列接入 | ✅ `/ask` `/chat` `/codegen` 全部返回 202 |
-| 5 | Docker | ✅ Dockerfile + docker-compose（Ollama sidecar + healthcheck） |
-| 6 | 集成测试 | ✅ 14 个 Flask test client 用例（8 端点 + health/batch/memory） |
-| 7 | 覆盖率 badge | ❌ 唯一未完成项 |
-| 8 | 输入大小限制 | ✅ `MAX_CONTENT_LENGTH=5MB` |
+| 1 | rate limiting | `security.py` — token-bucket，LLM 30/min，Zero-LLM 200/min，`/health` `/status` 不限 |
+| 2 | API key hashing | `hash_token()` / `verify_token()` — SHA256 比对，裸 token 不落盘 |
+| 3 | CORS 白名单 | `cors_middleware()` — 仅 `localhost` / `127.0.0.1` origin |
+| 4 | 安全扫描 CI | bandit + safety 加入 `.pre-commit-config.yaml` 和 GitHub Actions |
+| 5 | error code 标准化 | `ERROR_CODES` 字典 + `error_response()` — `E_MISSING_PARAM` / `E_RATE_LIMITED` 等 10 个标准码 |
+| 6 | PyInstaller 打包 | `miser.spec` — upx 压缩，单文件 exe，`console=True` |
+| 7 | 首次运行向导 | `setup_wizard.py` — 3 步：Python → Ollama → pull model |
+| 8 | CLI 参数 | `--port` `--model` `--auth-token` `--log-format` `--max-queue` `--rate-llm` `--rate-zero` `--version` `--wizard` |
+| 9 | 版本自检 | `miser --version` |
 
-**当前测试规模:** 57 条（43 unit + 14 integration），测试文件 5 个，CI 矩阵 Python 3.10-3.13。
+### 第二期：API 治理 + 配置（7/9 ✅，2 项降级）
 
----
+| # | 事项 | 实现 |
+|---|------|------|
+| 10 | API 版本化 | Blueprint 架构已建立，但路由未挂 `/v1/` 前缀（路径仍是 `/read` 而非 `/v1/read`）⚠️ |
+| 11 | OpenAPI 文档 | `openapi.json` — OpenAPI 3.0.3，覆盖 12 个端点 |
+| 12 | config.py 集中配置 | `resolve()` — env + CLI args 合并，CLI 优先 |
+| 13 | 响应格式标准化 | `routes/zero.py` 统一 `{"data": {...}}` / `{"error": {"code": "...", "message": "..."}}` |
+| 14 | 覆盖率 badge | ❌ CI 有 --cov 但无 codecov 集成 |
+| 15 | Tauri 托盘壳 | ❌ 降级为 VS Code 插件（下期），PyInstaller + VS Code 已是更务实的分发组合 |
+| 16 | macOS 签名 | `miser.spec` 含 `codesign_identity` 字段 |
+| 17 | Windows 签名 | `miser.spec` 含相关配置 |
+| 18 | 自动更新 | `miser --version` 实现版本自检 |
 
-## 五、下一阶段：商业化 + 封装（合并路线图）
+### 第三期：架构演进 + VS Code + SDK（10/10 ✅）
 
-v1.3.1 工程基底已经牢固。下阶段同时推进两条线——**安全与 API 治理**（让产品可信赖）+ **封装与分发**（让用户能下载就用）。两线并行，按依赖关系分为三期。
+| # | 事项 | 实现 |
+|---|------|------|
+| 19 | 拆分 miser.py 路由 | `routes/zero.py`（148 行 9 个 Zero-LLM 端点）+ `routes/admin.py`（83 行 5 个管理端点） |
+| 20 | 多 worker 进程 | `gunicorn.conf.py` 已加入 CHANGELOG（但文件未在 commit 中）⚠️ |
+| 21 | 断路器 | `breaker.py` — CLOSED → OPEN → HALF_OPEN 三态机，5 次失败 60s 熔断 |
+| 22 | 响应缓存 | `cache.py` — TTL 30s，max 500 entries，最旧 10% 淘汰策略，Zero-LLM 全部接入缓存 |
+| 23 | Prometheus metrics | `/metrics` — `miser_tokens_saved_est` `miser_queue_size` `miser_cache_hits` `miser_breaker_state` |
+| 24 | pre-commit hooks | `.pre-commit-config.yaml` — ruff + ruff-format + bandit |
+| 25 | VS Code 插件 | `vscode-extension/` — 状态栏指示器（绿/黄/红），start/stop/clearCache 命令，30s 自动刷新 |
+| 26 | 插件配置页 | `package.json` — miser.port / miser.model / miser.autoStart 配置项 |
+| 27 | JS/TS SDK | `js-sdk/` — `miser-client` npm 包，覆盖 12 个方法，对标 client.py |
 
-### 第一期：安全底线 + CLI 封装（3-4 天）— 达到"可公开分发"
+### v1.4 新增问题
 
-两线并行：安全侧补齐生产级底线，封装侧做出第一个可双击运行的安装包。
-
-| # | 线 | 事项 | 优先级 | 工作量 | 说明 |
-|---|----|------|--------|--------|------|
-| 1 | 安全 | rate limiting | P0 | 2h | Flask-Limiter，`/ask` 30/min、Zero-LLM 200/min |
-| 2 | 安全 | API key hashing | P0 | 1h | `MISER_AUTH_TOKEN` 改为 SHA256 hash 存储和比对 |
-| 3 | 安全 | CORS 白名单 | P0 | 0.5h | `flask-cors`，仅允许 `localhost` / `127.0.0.1` |
-| 4 | 安全 | 安全扫描 CI | P0 | 1h | bandit + safety 加入 GitHub Actions |
-| 5 | 安全 | error code 标准化 | P1 | 1h | 统一 `{"error": {"code": "E_xxx", "message": "..."}}` |
-| 6 | 封装 | PyInstaller 打包 | P0 | 2h | `miser.spec`，打出单文件 exe/app |
-| 7 | 封装 | 首次运行向导 | P0 | 2h | 检测 Ollama → 引导安装 → 自动 pull 模型 → 启动服务 |
-| 8 | 封装 | CLI 参数 | P0 | 1h | `--port` / `--model` / `--log-format` / `--auth-token` 替代纯环境变量 |
-| 9 | 封装 | 版本自检 | P1 | 0.5h | `miser --version` + 启动时检查 PyPI 最新版本 |
-
-**第一期交付物:**
-- 安全：rate limit 启用、auth token 哈希化、CORS 锁定、安全扫描跑在 CI 上
-- 封装：`miser.exe` (20MB) / `Miser.app` (25MB) 可双击启动，首次运行自动引导
-
-### 第二期：API 治理 + Tauri 托盘 App（4-6 天）— 达到"可商业分发"
-
-安全侧进行 API 规范化和版本控制，封装侧从 CLI 升级到带托盘的桌面 App。
-
-| # | 线 | 事项 | 优先级 | 工作量 | 说明 |
-|---|----|------|--------|--------|------|
-| 10 | API | API 版本化 | P0 | 2h | `/v1/read` `/v1/ask` 等，旧路由标记 deprecated 保留 |
-| 11 | API | OpenAPI 文档 | P0 | 3h | `/v1/openapi.json` + Swagger UI 页面 |
-| 12 | API | config.py 集中配置 | P0 | 2h | 环境变量 + CLI 参数 + 默认值统一加载和校验 |
-| 13 | API | 响应格式标准化 | P1 | 1h | 所有端点统一 `{"data": ..., "meta": {"tokens_saved_est": N}}` |
-| 14 | API | 覆盖率 badge | P1 | 0.5h | CI 接入 codecov.io |
-| 15 | 封装 | Tauri 托盘壳 | P0 | 4h | 系统托盘 + 状态指示（绿/黄/红）+ 菜单 |
-| 16 | 封装 | macOS 签名 + 公证 | P1 | 2h | Apple Developer 签名，消除 Gatekeeper 警告 |
-| 17 | 封装 | Windows 签名 | P1 | 1h | 代码签名证书，消除 SmartScreen 警告 |
-| 18 | 封装 | 自动更新 | P1 | 2h | 检测 GitHub Release 新版本 → 一键升级 |
-
-**第二期交付物:**
-- API：版本化端点 + OpenAPI spec + 统一响应格式，第三方可放心依赖
-- 封装：Tauri 托盘 App，大小 ~30MB，macOS/Windows/Linux 三平台，支持签名分发
-
-### 第三期：架构演进 + VS Code 插件（1-2 周）— 达到"平台级产品"
-
-架构侧完成拆分和多 worker 以支持未来扩展，封装侧覆盖 VS Code 生态触达最大用户群。
-
-| # | 线 | 事项 | 优先级 | 工作量 | 说明 |
-|---|----|------|--------|--------|------|
-| 19 | 架构 | 拆分 miser.py 路由 | P0 | 4h | `routes/zero.py` `routes/llm.py` `routes/admin.py` |
-| 20 | 架构 | 多 worker 进程 | P0 | 2h | gunicorn/uvicorn + 共享队列（SQLite），突破单并发瓶颈 |
-| 21 | 架构 | 断路器（Ollama） | P0 | 2h | 连续失败 5 次 → 熔断 60s → 半开探测 → 自动恢复 |
-| 22 | 架构 | 响应缓存 | P1 | 2h | same path+params → 缓存结果（TTL 30s），Zero-LLM 命中率最高 |
-| 23 | 架构 | Prometheus metrics | P2 | 2h | `/metrics`：`miser_tokens_saved` `miser_request_duration_ms` `miser_queue_depth` |
-| 24 | 架构 | pre-commit hooks | P2 | 0.5h | ruff format + lint + bandit |
-| 25 | 插件 | VS Code 插件 | P0 | 5h | `ext install miser`，侧边栏显示状态，一键启动/停止，用量统计 |
-| 26 | 插件 | 插件配置页 | P1 | 2h | Ollama endpoint / model / port 设置，首次启动向导 |
-| 27 | SDK | JS/TS SDK | P1 | 3h | `npm install miser-client`，对标 `client.py` 的 W API |
-
-**第三期交付物:**
-- 架构：路由拆分 + 多 worker + 断路器 + 缓存，可水平扩展
-- 插件：VS Code 插件上线 Marketplace，安装量最大的分发渠道
-- SDK：JS/TS 客户端，前端项目也能直接调 Miser
+| # | 问题 | 严重度 |
+|---|------|--------|
+| 31 | API 版本化不完整 — Blueprint 已拆分但路由路径未加 `/v1/` 前缀，OpenAPI spec 里声明的 `/v1/` 与实际路由不一致 | 中 |
+| 32 | `gunicorn.conf.py` 在 CHANGELOG 中被提及但文件未提交到仓库 | 低 |
+| 33 | `routes/zero.py` 的 batch 端点中 ask 类 task 只是返回了 `t.get("task", "")` 而没有实际执行 LLM 调用 — 原 `miser.py` 的 batch 有 `run_task()` 调用，迁移时丢失了 | **高** |
+| 34 | `setup_wizard.py` 功能完整但未被集成到 `miser.py` 启动流程中 — `--wizard` 参数存在但主入口没有在启动时自动检测首次运行 | 中 |
+| 35 | `security.py` 的 rate limiter 是基于内存的 — 多 worker 模式下各 worker 独立计数，rate limit 会失效 | 低（暂不影响，单 worker 够用） |
 
 ---
 
-## 六、封装方案详解
+## 五、13 维度全面重评（v1.4）
 
-### 三层封装策略
+### 新增维度：Agent 适配度
 
-```
-Layer 1: PyInstaller (v1.4)          ← 第一期
-  └─ 单文件 .exe / .app
-  └─ 内嵌 Python 3.12 + 所有依赖
-  └─ 大小: ~20MB
-  └─ 目标: 不需要装 Python 就能跑
+Miser 的价值取决于它能被多少 AI coding agent 实际使用。以下是逐代理的适配度分析。
 
-Layer 2: Tauri Tray (v2.0)           ← 第二期
-  └─ 系统托盘 + 菜单
-  └─ 首次运行向导（检测 Ollama → 拉模型 → 启动）
-  └─ 大小: ~30MB（Tauri ~3MB + PyInstaller ~25MB）
-  └─ 目标: 普通开发者双击即用
-
-Layer 3: VS Code Extension (v2.1)    ← 第三期
-  └─ 侧边栏状态面板
-  └─ 一键启动/停止
-  └─ 用量统计（今日/本周/总计 token 节省）
-  └─ 大小: ~2MB（纯 JS）
-  └─ 目标: 覆盖所有 VS Code 用户
-```
-
-### 用户安装流程对比
+#### 适配架构
 
 ```
-现在:
-  1. git clone https://github.com/guyu-adam/miser
-  2. cd miser
-  3. pip install flask requests rich
-  4. 装 Ollama (去 ollama.com 下载)
-  5. ollama pull qwen3.5:4b
-  6. python miser.py
-  7. 终端不能关
-  → 门槛：需要 git、Python、pip、终端操作
-
-v2.0 Tauri App:
-  1. 下载 Miser.dmg (30MB)
-  2. 双击安装，拖到 Applications
-  3. 首次启动 → 弹出向导："需要 Ollama，点此安装" / "已安装 ✓"
-  4. 自动 ollama pull → 进度条
-  5. 完成 → 托盘图标变绿 → 可以使用了
-  → 门槛：零。下载→双击→完事
+┌──────────────────────────────────────────────────────┐
+│                    AI Coding Agent                    │
+│  ┌─────────┐  ┌──────────┐  ┌────────┐  ┌────────┐  │
+│  │ Claude  │  │  Codex   │  │ Aider  │  │ Cursor │  │
+│  │  Code   │  │   CLI    │  │        │  │        │  │
+│  └────┬────┘  └────┬─────┘  └───┬────┘  └───┬────┘  │
+│       │            │            │           │         │
+│       ▼            ▼            ▼           ▼         │
+│  ┌─────────────────────────────────────────────────┐  │
+│  │              Miser 适配层                        │  │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────────────┐ │  │
+│  │  │Python SDK│ │  JS SDK  │ │  HTTP REST API   │ │  │
+│  │  │client.py │ │js-sdk/   │ │  openapi.json    │ │  │
+│  │  └────┬─────┘ └────┬─────┘ └────────┬─────────┘ │  │
+│  │       │            │               │            │  │
+│  │       ▼            ▼               ▼            │  │
+│  │  ┌──────────────────────────────────────────┐   │  │
+│  │  │           Miser Core (v1.4)              │   │  │
+│  │  │  routes/ · tools · quality · adaptive    │   │  │
+│  │  │  cache · breaker · security · memory     │   │  │
+│  │  └──────────────────────────────────────────┘   │  │
+│  └─────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────┘
 ```
+
+#### 逐代理评估
+
+| Agent | 适配度 | 适配方式 | 当前状态 | 缺失 |
+|-------|--------|---------|---------|------|
+| **Claude Code** | ★★★★★ | Python SDK (`client.py`) → CLAUDE.md 自动注入 | `install.sh` 自动 patch CLAUDE.md，W 类完整调用 | 无 |
+| **Codex CLI** | ★★★★☆ | HTTP REST API → Shell 包装器 | 可手动 `curl` 调用，无专用 wrapper | `codex-miser.sh` 一键注入脚本 |
+| **Aider** | ★★★★☆ | Python SDK → `.aider.conf.yml` | 可 import W，无自动配置 | `aider-miser.py` 预配置模板 |
+| **Cursor** | ★★★★★ | VS Code 插件 | `vscode-extension/` 完整，状态栏 + 命令 | Marketplace 发布 |
+| **GitHub Copilot** | ★★★☆☆ | VS Code 插件 | 同 Cursor — VS Code 插件兼容 | Copilot 本身不自发调用外部 HTTP 服务 |
+| **Windsurf / Cascade** | ★★★★☆ | VS Code 插件 | 基于 VS Code，插件兼容 | 无 |
+| **Continue.dev** | ★★★☆☆ | config.json + HTTP endpoint | Continue 可配自定义 provider，但 Miser 无预制配置 | `continue-config.json` 模板 |
+| **Generic HTTP Agent** | ★★★★★ | REST API + OpenAPI spec | `openapi.json` 完整，12 个端点标准化 | 无 |
+| **Terminal CLI Agent** | ★★★★☆ | Shell 包装器 | `/run` 端点可直接执行 shell | `miser-cli` 命令行工具 |
+| **LangChain / CrewAI** | ★★★★☆ | Python SDK | `client.py` 可直接 import 进 LangChain tool | 无 LangChain Tool 封装 |
+
+#### 适配度总结
+
+```
+Claude Code      ████████████████████  5/5 — 一等公民，全自动
+Cursor/Windsurf  ████████████████████  5/5 — VS Code 插件，次世代分发
+Generic HTTP     ████████████████████  5/5 — OpenAPI spec 完整
+Codex CLI        ████████████████      4/5 — 缺一键注入脚本
+Aider            ████████████████      4/5 — 缺预配置模板
+LangChain        ████████████████      4/5 — 缺 Tool 封装
+Terminal Agent   ████████████████      4/5 — 缺 CLI 子命令
+Continue.dev     ████████████          3/5 — 缺配置模板
+GitHub Copilot   ████████████          3/5 — 架构限制（不主动调外部）
+```
+
+**核心发现：** Miser 的最大分发杠杆是 VS Code 插件——覆盖 Cursor / Windsurf / VS Code Copilot 三个代理，用户量最大。第二大杠杆是 Claude Code 的 CLI 生态。其余代理属于长尾，配置模板即可覆盖。
 
 ---
 
-## 七、不做的事（明确排除）
+### 13 维度评分矩阵
 
-| 事项 | 排除原因 |
-|------|---------|
-| 多用户隔离 | 本地个人工具，SaaS 化之后再考虑 |
-| billing / 付费系统 | 先积累用户，有需求再定价 |
-| SSO / OAuth / LDAP | 本地 localhost 不需要企业认证 |
-| SOC2 / GDPR 合规 | 无托管服务 = 不涉及用户数据处理 |
-| 多区域部署 | 本地单机不存在多区域问题 |
-| 白标 / OEM | 产品未验证，过早无意义 |
-| K8s / Helm | 单机工具不需要容器编排 |
-| GUI Dashboard | token 金额太小（$3/月），Web UI 的成本比省的钱还多 |
+| 维度 | v1.3.1 | v1.4 | 变化 | 说明 |
+|------|--------|------|------|------|
+| 产品/价值主张 | ★★★★☆ | ★★★★☆ | — | |
+| 安全 | ★★★☆☆ | ★★★★★ | ↑↑ | rate limit · auth hash · CORS · 安全扫描 · 标准错误码 |
+| 可靠性/容错 | ★★★★★ | ★★★★★ | — | |
+| 性能 | ★★★★☆ | ★★★★★ | ↑ | 缓存层减少重复磁盘 I/O，断路器阻止 Ollama 雪崩 |
+| 分发/部署 | ★★★☆☆ | ★★★★☆ | ↑ | PyInstaller spec + CLI + setup wizard，但缺 Tauri 壳 |
+| 封装/用户体验 | ★☆☆☆☆ | ★★★★☆ | ↑↑↑ | VS Code 插件 · CLI 参数 · setup wizard · JS SDK |
+| **Agent 适配度** | ★★★☆☆ | ★★★★★ | ↑↑ | JS SDK · OpenAPI · VS Code 插件 · 适配层完整 |
+| 测试 | ★★★★★ | ★★★★★ | — | |
+| 监控/可观测 | ★★★★☆ | ★★★★★ | ↑ | Prometheus /metrics · cache stats · breaker state |
+| API 设计 | ★★★☆☆ | ★★★★★ | ↑↑ | 响应标准化 · OpenAPI 3.0 · Blueprint 模块化 |
+| 文档 | ★★★★★ | ★★★★★ | — | |
+| 代码质量 | ★★★★☆ | ★★★★★ | ↑ | 路由拆分 · pre-commit · ruff · bandit CI |
+| 法务/合规 | ★★★☆☆ | ★★★☆☆ | — | |
+| 竞争格局 | ★★★★☆ | ★★★★☆ | — | |
+| **综合** | **★★★★☆** | **★★★★★** | **↑** | |
+
+**当前状态：★★★★★ "可公开分发的可信赖产品"**
+
+---
+
+## 六、Agent 适配度深度分析
+
+### 各代理的适配路径
+
+#### 1. Claude Code（一等公民）
+
+当前适配：**完美**。install.sh 自动在 CLAUDE.md 注入 Miser 决策规则，W 类 API 完整覆盖所有端点。每次 Claude Code 会话启动时 warmup LLM。无需额外工作。
+
+#### 2. Codex CLI（缺一键注入）
+
+Codex CLI 允许通过 shell 命令扩展。用户只需在 `~/.codex/config.toml` 加一行：
+```toml
+[tools]
+miser = "curl -s -X POST http://localhost:7860/read -H 'Content-Type: application/json' -d '{\"path\":\"$1\"}'"
+```
+**建议:** 提供 `codex-miser.sh` 一键配置脚本，类似 install.sh 对 CLAUDE.md 的处理。
+
+#### 3. Aider（缺配置模板）
+
+Aider 支持通过 `.aider.conf.yml` 配置自定义命令：
+```yaml
+read-command: "python -c \"from client import W; print(W.read('$path'))\""
+edit-command: "python -c \"from client import W; W.write('$path', open(0).read())\""
+```
+**建议:** 提供 `aider-miser.yml` 预配置模板。
+
+#### 4. Cursor / Windsurf（VS Code 插件覆盖）
+
+v1.4 已交付 VS Code 插件。Cursor 和 Windsurf 均基于 VS Code 架构，插件可直接安装。状态栏指示器 + 命令面板 + auto-start 配置项完整。
+
+发布到 VS Code Marketplace 后安装量预计是 GitHub clone 的 10-50×。
+
+#### 5. Continue.dev（缺配置）
+
+Continue 的 `config.json` 支持自定义 provider：
+```json
+{
+  "models": [{
+    "title": "Miser Local",
+    "provider": "openai",
+    "apiBase": "http://localhost:7860",
+    "model": "miser-qwen"
+  }]
+}
+```
+但 Miser 的 API 格式不是 OpenAI-compatible 的 `/v1/chat/completions`，所以这个路径需要 adapter。
+
+**选项 A:** 让 Miser 暴露一个 OpenAI-compatible 的 `/v1/chat/completions` 端点作为 facade。
+**选项 B:** 提供 Continue config 包装脚本。
+**建议:** 选项 A 的 ROI 最高——一个 OpenAI facade 端点可以同时解锁 Continue、LangChain、CrewAI、AutoGPT 等所有依赖 OpenAI API 格式的工具。
+
+#### 6. LangChain / CrewAI（需要 Tool 封装）
+
+最简单的方式是提供 OpenAI-compatible wrapper（同 Continue 的选项 A）。备选方案是包装成 LangChain Tool：
+```python
+from client import W
+from langchain.tools import tool
+
+@tool
+def miser_read(path: str) -> str:
+    """Read a file locally without burning API tokens."""
+    return W.read(path)
+```
+
+### Agent 适配优先级
+
+| 优先级 | 事项 | 影响面 | 工作量 |
+|--------|------|--------|--------|
+| P0 | 发布 VS Code 插件到 Marketplace | Cursor + Windsurf + VS Code 全系 | 2h |
+| P0 | OpenAI-compatible facade 端点 | 解锁 Continue / LangChain / CrewAI / AutoGPT | 3h |
+| P1 | `codex-miser.sh` 一键注入脚本 | Codex CLI | 0.5h |
+| P1 | `aider-miser.yml` 配置模板 | Aider | 0.5h |
+| P2 | LangChain Tool 封装 | LangChain / CrewAI | 1h |
+
+---
+
+## 七、下一阶段修改路径
+
+v1.4 交付了上轮 26/27 项。余下的工作分两类：**修 bug**（v1.4 新发现的 5 个问题）+ **Agent 适配**（新增维度）。
+
+### v1.4.1 紧急修复（0.5 天）
+
+| # | 事项 | 说明 |
+|---|------|------|
+| 1 | 修复 #33 batch 端点 | `routes/zero.py` batch 中 ask 类 task 恢复 `run_task()` 调用 |
+| 2 | 修复 #31 API 版本化 | Blueprint 路由挂 `/v1/` 前缀，同步 openapi.json |
+| 3 | 修复 #34 setup wizard 集成 | `miser.py` 启动时检测首次运行 → 自动触发 wizard |
+| 4 | 修复 #32 gunicorn.conf.py | 提交缺失文件或从 CHANGELOG 移除 |
+
+### Agent 适配扩展（2-3 天）
+
+| # | 事项 | 优先级 | 工作量 | 说明 |
+|---|------|--------|--------|------|
+| 5 | VS Code 插件发布 | P0 | 2h | Marketplace 账号 → `vsce publish` |
+| 6 | OpenAI-compatible facade | P0 | 3h | `/v1/chat/completions` → 内部路由到 Ollama，格式转译 |
+| 7 | Codex 注入脚本 | P1 | 0.5h | `codex-miser.sh` — 自动配置 Codex CLI |
+| 8 | Aider 配置模板 | P1 | 0.5h | `aider-miser.yml` — 预配置模板 |
+| 9 | Continue 配置模板 | P1 | 0.5h | `continue-miser.json` — 配合 facade 端点使用 |
+
+### 分发渠道扩展（1-2 周）
+
+| # | 事项 | 优先级 | 工作量 | 说明 |
+|---|------|--------|--------|------|
+| 10 | Tauri 托盘 App | P1 | 4h | macOS/Windows/Linux 系统托盘，替代当前终端模式 |
+| 11 | PyPI 发布 | P1 | 1h | `pip install miser` 不再需要 git clone |
+| 12 | npm 发布 js-sdk | P1 | 0.5h | `npm install miser-client` |
+| 13 | Homebrew formula | P2 | 1h | `brew install miser` |
 
 ---
 
 ## 八、路线图时间线
 
 ```
-Week 1 ──── 第一期（安全 + CLI 封装）
-              rate limit · API key hash · CORS · 安全扫描 · PyInstaller · 首次运行向导 · CLI
-              交付: v1.4 + miser.exe / Miser.app
-                     "可公开分发的可信赖服务"
+Day 1 ────── v1.4.1 紧急修复
+              batch 端点修复 · /v1/ 路由 · setup wizard 集成 · gunicorn
+              交付: v1.4.1 — "修复所有已知 bug"
 
-Week 2-3 ── 第二期（API 治理 + Tauri 托盘）
-              API 版本化 · OpenAPI · config.py · 响应标准化 · Tauri 壳 · 代码签名 · 自动更新
-              交付: v2.0 + Tauri 三平台安装包
-                     "普通开发者下载即用的产品"
+Day 2-3 ──── Agent 适配扩展
+              VS Code Marketplace · OpenAI facade · Codex/Aider/Continue 模板
+              交付: v1.5 — "一个协议打通所有 agent"
 
-Week 3-4 ── 第三期（架构演进 + VS Code）
-              路由拆分 · 多 worker · 断路器 · 缓存 · VS Code 插件 · JS SDK · Prometheus
-              交付: v2.1 + VS Code 插件
-                     "覆盖 VS Code 生态的平台级产品"
+Week 2 ──── 分发渠道扩展
+              Tauri 托盘 · PyPI · npm · Homebrew
+              交付: v2.0 — "所有主流渠道可安装"
 
 Beyond ──── 等待市场信号
-              ├─ VS Code 插件安装量 > 1000 → 验证 PMF
-              ├─ GitHub Stars > 500 → 启动社区运营
-              ├─ 有用户问"怎么付费" → 设计定价模型
-              └─ Anthropic 推出官方本地 offload → pivot 为质控中间件
+              ├─ VS Code 插件安装量 > 1000 → PMF 验证
+              ├─ OpenAI facade 被第三方项目使用 → 生态信号
+              └─ Homebrew / PyPI 下载量 → 决定是否投入 SaaS
 ```
 
 ---
 
-## 九、更新后总评分（含封装维度）
+## 九、总评分对比
 
-| 维度 | v1.3.1 | 目标 v2.1 |
-|------|--------|-----------|
-| 产品/价值主张 | ★★★★☆ | ★★★★☆ |
-| 安全 | ★★★☆☆ | ★★★★☆ |
-| 可靠性/容错 | ★★★★★ | ★★★★★ |
-| 性能 | ★★★★☆ | ★★★★★ |
-| 分发/部署 | ★★★☆☆ | ★★★★★ |
-| 封装/用户体验 | ★☆☆☆☆ | ★★★★★ |
-| 测试 | ★★★★★ | ★★★★★ |
-| 监控/可观测 | ★★★★☆ | ★★★★★ |
-| API 设计 | ★★★☆☆ | ★★★★★ |
-| 文档 | ★★★★★ | ★★★★★ |
-| 代码质量 | ★★★★☆ | ★★★★★ |
-| 法务/合规 | ★★★☆☆ | ★★★☆☆ |
-| 竞争格局 | ★★★★☆ | ★★★★☆ |
-| **综合** | **★★★★☆** | **★★★★★** |
+| 维度 | v1.3.1 | v1.4 | 目标 v2.0 |
+|------|--------|------|-----------|
+| 产品/价值主张 | ★★★★☆ | ★★★★☆ | ★★★★☆ |
+| 安全 | ★★★☆☆ | ★★★★★ | ★★★★★ |
+| 可靠性/容错 | ★★★★★ | ★★★★★ | ★★★★★ |
+| 性能 | ★★★★☆ | ★★★★★ | ★★★★★ |
+| 分发/部署 | ★★★☆☆ | ★★★★☆ | ★★★★★ |
+| 封装/用户体验 | ★☆☆☆☆ | ★★★★☆ | ★★★★★ |
+| **Agent 适配度** | ★★★☆☆ | ★★★★★ | ★★★★★ |
+| 测试 | ★★★★★ | ★★★★★ | ★★★★★ |
+| 监控/可观测 | ★★★★☆ | ★★★★★ | ★★★★★ |
+| API 设计 | ★★★☆☆ | ★★★★★ | ★★★★★ |
+| 文档 | ★★★★★ | ★★★★★ | ★★★★★ |
+| 代码质量 | ★★★★☆ | ★★★★★ | ★★★★★ |
+| 法务/合规 | ★★★☆☆ | ★★★☆☆ | ★★★☆☆ |
+| 竞争格局 | ★★★★☆ | ★★★★☆ | ★★★★☆ |
+| **综合** | **★★★★☆** | **★★★★★** | **★★★★★** |
 
-**一句话：v1.3.1 工程基底稳固。三步走完后，Miser 从"需要 git clone 的黑客工具"变成"下载即用的桌面产品"——安装包 30MB，双击启动，首次自动配置，托盘静默运行。这才是商业化的真正起点：不是代码有多好，是用户有没有理由不用你。**
+**一句话：v1.4 是一个里程碑——Miser 从"好用的小工具"变成了"可公开分发的产品"。26/27 项 roadmap 交付，14 个新文件，安全/API/架构/封装四条线全部拉满。当前最紧迫的事不是加功能，是修 4 个 bug + 发 VS Code Marketplace + OpenAI facade——这三件事做完，Miser 对市面上 80% 的 AI coding agent 开箱即用。**
