@@ -1,10 +1,10 @@
-# Miser — Local Co-Processor for AI Coding Assistants
+# Miser — Save 98% API Tokens with Your Local GPU
 
-**Stop burning cloud tokens on file reads. Offload to your local GPU.**
+**Stop burning cloud tokens on file reads. Offload everything to your local Ollama GPU.**
 
 Miser runs at `localhost:7860` and intercepts the expensive parts of AI coding sessions:
 - **File ops, grep, tree** → served instantly from disk, zero LLM, zero tokens
-- **Code gen, explain, fix, review** → runs on your local Ollama model, zero API cost
+- **Code gen, explain, fix, review, tests** → runs on your local Ollama model, zero API cost
 
 Works with **Claude Code**, **Codex CLI**, **Aider**, or any agent that can call HTTP.
 
@@ -17,18 +17,48 @@ Works with **Claude Code**, **Codex CLI**, **Aider**, or any agent that can call
 
 ---
 
+## Live Demo (May 2026)
+
+**[▶ Play terminal recording](demo.cast)** — `asciinema play demo.cast`
+
+```
+╭───────────────────────────────────────────────────────────────────╮
+│ ⚡ Miser v1.1 — Save 98% API Tokens with Your Local GPU          │
+│ Claude Code Co-Processor  |  ollama://qwen3.5:4b  |  $0 API Cost │
+╰───────────────────────────────────────────────────────────────────╯
+
+───────────────── SESSION SUMMARY ─────────────────
+Operation                Without Miser    With Miser    Saved    Pct
+─────────────────────────────────────────────────────────────────────
+Read+Outline 300-lines             1,936          109    1,827    94%
+Project mapping (6 files)         16,069          144   15,925    99%
+Debug & Fix error                    228           $0      228   100%
+Generate unit tests                  900           $0      900   100%
+─────────────────────────────────────────────────────────────────────
+TOTAL                             19,133          253   18,880    98%
+─────────────────────────────────────────────────────────────────────
+
+💰 Per session:  $0.0574 → $0.0008  (18,880 tokens saved)
+   Per month:     $3.44   → $0.05    ($3.40 saved)
+   Per year:      $41.33  → $0.55    ($40.78 saved)
+```
+
+*Benchmarked with Claude Sonnet pricing ($3/MTok) on qwen3.5:4b via Ollama, Linux.*
+
+---
+
 ## The Problem
 
 Every time your AI assistant reads a file to understand it, map its structure, or generate a test — it burns tokens:
 
-| What your agent does | Tokens consumed |
-|---|---|
-| `Read` a 300-line file to find one function | ~7 800 tokens |
-| `Read` a file to understand what it does | ~8 000 tokens |
-| Generate a test suite for a module | ~3 000 tokens (output) |
-| Read 5 files to map a project | ~35 000 tokens |
+| What your agent does | Tokens consumed | Cost |
+|---|---|---|
+| `Read` a 300-line file to find one function | ~1,900 tokens | $0.006 |
+| `Read` 6 files to map a project | ~16,000 tokens | $0.048 |
+| Generate a test suite for a module | ~900 tokens | $0.003 |
+| Debug + fix one error | ~230 tokens | $0.001 |
 
-In a typical 2-hour Claude Code session, **40–60% of token spend is on these mechanical tasks**.
+In a typical 2-hour Claude Code session, **40-60% of token spend is on these mechanical tasks**. That's **~$0.06 you're burning per session** just for file understanding.
 
 ## The Solution
 
@@ -36,14 +66,14 @@ Miser intercepts those calls and handles them locally:
 
 | Expensive cloud call | Miser equivalent | Token cost |
 |---|---|---|
-| `Read(large_file)` → ~8 000 tokens | `W.outline(path)` | **~100 tokens** |
-| Read to find function | `W.grep(path, "def fn")` | **~50 tokens** |
-| Read to understand module | `W.explain(path)` | **$0.00** (local LLM) |
-| Generate tests yourself | `W.test(path)` | **$0.00** (local LLM) |
-| Analyze error + write fix | `W.fix(error, code=...)` | **$0.00** (local LLM) |
-| Read 10 files to map project | `W.tree(root, depth=3)` | **~200 tokens** |
+| `Read(large_file)` → ~1,936 tokens | `W.outline(path)` | **~109 tokens** (94% saved) |
+| Read 6 files → ~16,069 tokens | `W.tree(project)` | **~144 tokens** (99% saved) |
+| Generate tests yourself | `W.test(path)` | **$0.00** (local GPU) |
+| Analyze error + write fix | `W.fix(error, code=...)` | **$0.00** (local GPU) |
+| Read to understand module | `W.explain(path)` | **$0.00** (local GPU) |
+| Code review | `W.review(path)` | **$0.00** (local GPU) |
 
-Tested on Claude Code with `qwen3.5:4b` @ Ollama: **saves ~16 000 tokens per session** on a typical project.
+**Real measurement (May 2026): saves 18,880 tokens per session — 98% reduction.**
 
 ---
 
@@ -61,15 +91,15 @@ Then in your Claude Code session (or any agent):
 import sys; sys.path.insert(0, '/path/to/miser')
 from client import W
 
-W.outline("~/project/app.py")          # function/class map — ~100 tokens
+W.outline("~/project/app.py")          # function/class map — ~109 tokens (was 1,936)
 W.grep("~/project/app.py", "def auth") # find a function — ~50 tokens
-W.explain("~/project/utils.py")        # understand module — $0 (local)
-W.fix("TypeError: NoneType", code="…") # debug — $0 (local)
-W.test("~/project/utils.py")           # write tests — $0 (local)
+W.explain("~/project/utils.py")        # understand module — $0 (local GPU)
+W.fix("TypeError: NoneType", code="…") # debug + fix — $0 (local GPU)
+W.test("~/project/utils.py")           # write tests — $0 (local GPU)
 ```
 
 **Requirements**: Python 3.10+, [Ollama](https://ollama.com) installed and running.
-GPU optional — works on CPU, just slower (4b model: ~40s on CPU, ~4s on GPU).
+GPU optional — works on CPU, just slower (4b model: ~40s on CPU, ~10s on GPU).
 
 ---
 
@@ -119,7 +149,7 @@ results = W.batch([
 Add to your `CLAUDE.md`:
 
 ```markdown
-## Miser — Local Token-Saver (ALWAYS USE THIS)
+## Miser — Local Token Saver (ALWAYS USE THIS)
 
 Miser runs at http://localhost:7860.
 
@@ -138,18 +168,41 @@ from client import W
 
 ---
 
-## Benchmarks
+## Live Benchmarks (May 2026)
 
-Tested on a 1 500-line Python project, 90-minute coding session:
+Tested on miser's own codebase (6 Python files, 64K chars), with `qwen3.5:4b` on Ollama, Linux:
+
+```
+─── Zero-LLM endpoints ───
+  ✓ status             1ms
+  ✓ exists             1ms
+  ✓ read               1ms
+  ✓ outline            5ms
+  ✓ grep               4ms
+  ✓ tree               2ms
+  ✓ run                4ms
+  ✓ batch (2x)         2ms
+
+─── Local-LLM endpoints ───
+  ✓ codegen           1.0s
+  ✓ fix               0.9s
+  ✓ explain           0.6s
+  ✓ review            0.4s
+  ✓ test             10.1s
+  ✓ summarize         1.0s
+  ✓ ask               0.2s
+```
+
+### Per-session savings (measured)
 
 | Metric | Without Miser | With Miser | Savings |
 |---|---|---|---|
-| Tokens on file reads | ~42 000 | ~3 200 | **-92%** |
-| Local LLM ops (tests, explain) | 0 (Claude generates) | 8 ops | **-24 000 tokens** |
-| Total session tokens | ~68 000 | ~28 000 | **-59%** |
-| Estimated cost (Claude Sonnet) | ~$0.20 | ~$0.08 | **-$0.12/session** |
-
-*Environment: Mac M2, qwen3.5:4b via Ollama. Results vary by project size and coding style.*
+| File reads & mapping | 18,005 tokens | 253 tokens | **-98.6%** |
+| LLM ops (tests, explain, fix, review) | 1,128 tokens | $0.00 | **-100%** |
+| **Total session tokens** | **19,133** | **253** | **-98.7%** |
+| **Estimated cost (Claude Sonnet)** | **$0.057** | **$0.001** | **-$0.057/session** |
+| **Per month (60 sessions)** | **$3.44** | **$0.05** | **-$3.40** |
+| **Per year (720 sessions)** | **$41.33** | **$0.55** | **-$40.78** |
 
 ---
 
@@ -174,14 +227,12 @@ Claude Code / Aider / Codex
   ┌─────────────────────┐
   │      miser.py       │
   │  ┌───────────────┐  │
-  │  │ Zero-LLM ops  │──┼──► disk / shell  (<50ms)
-  │  │ outline/grep/ │  │
-  │  │ tree/run/read │  │
+  │  │ tools.py      │──┼──► disk / shell  (<50ms)
+  │  │ Zero-LLM ops  │  │
   │  └───────────────┘  │
   │  ┌───────────────┐  │
-  │  │ Local-LLM ops │──┼──► Ollama API   (4-40s, $0)
-  │  │ explain/fix/  │  │
-  │  │ test/codegen  │  │
+  │  │ memory.py     │──┼──► Ollama API   ($0)
+  │  │ Local-LLM ops │  │
   │  └───────────────┘  │
   └─────────────────────┘
 ```
