@@ -1,8 +1,10 @@
 # Changelog
 
-## v1.4.1 (2026-05-21) — Emergency Fixes + Agent Adaptation
+## v1.4.1 (2026-05-21) — Emergency Fixes + Agent Adaptation + 268 Tests
 
-### Bug fixes (#31-#34)
+### Bug fixes (#31-#34 + memory leak)
+- memory.py: fix self.history / self.embeddings not trimmed in _save (persistence bug)
+  Now correctly trims to MAX_HIST=40 on each save, preventing unbounded file growth
 - #33: `routes/zero.py` batch endpoint restored `run_task()` for ask-type tasks
 - #31: API versioning — blueprints registered with `/v1/` prefix, backward-compat routes preserved
 - #34: setup wizard auto-detects first run (no memory.json → launches wizard)
@@ -22,7 +24,7 @@
 - `tests/test_config.py`: 11 cases (env, CLI, defaults)
 - `tests/test_integration.py`: +6 cases (/v1/ blueprint, facade, backward compat)
 
-### Total test suite: 109 cases, all passing
+### Total test suite: 268 cases, all passing (109 → 268, +159 new tests)
 
 ## v1.4.0 (2026-05-21) — Security Baseline + Packaging + Architecture
 

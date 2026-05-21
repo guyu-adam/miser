@@ -39,13 +39,15 @@ class Memory:
                 pass
 
     def _save(self):
+        self.history = self.history[-MAX_HIST:]
         MEMORY_FILE.write_text(json.dumps(
-            {"notes": self.notes, "history": self.history[-MAX_HIST:]},
+            {"notes": self.notes, "history": self.history},
             ensure_ascii=False, indent=2
         ))
 
     def _save_embeddings(self):
-        EMBED_FILE.write_text(json.dumps(self.embeddings[-MAX_HIST:], ensure_ascii=False))
+        self.embeddings = self.embeddings[-MAX_HIST:]
+        EMBED_FILE.write_text(json.dumps(self.embeddings, ensure_ascii=False))
 
     def _embed(self, text: str) -> list:
         try:
