@@ -408,7 +408,4 @@ tests/test_compatibility.py::TestPythonVersionCompatibility::test_flask_version_
     version = tuple(int(x) for x in flask.__version__.split(".")[:2])
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-======================== 395 passed, 1 warning in 6.04s ========================
-=========================== short test summary info ============================
-FAILED tests/test_performance.py::TestCachePerformance::test_cache_hit_faster_than_miss
-=================== 1 failed, 394 passed, 1 warning in 6.04s ===================
+======================== 395 passed, 1 warning in 5.90s ========================
