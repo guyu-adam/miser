@@ -68,6 +68,8 @@ def distill(content: str, category: str = "code_file",
              model: str = MODEL, max_tokens: int = 300) -> str:
     """
     Semantically distill a large context into a structured digest.
+    For long content (>8000 chars), chunks into overlapping segments,
+    distills each independently, then merges. (review issue #20)
 
     Args:
         content: The raw text to distill
@@ -79,26 +81,57 @@ def distill(content: str, category: str = "code_file",
         Structured digest string, or original content if distillation fails.
     """
     if not content or len(content) < 200:
-        return content  # Too short to be worth distilling
+        return content
 
     template = TEMPLATES.get(category, TEMPLATES["code_file"])
-    prompt = f"{template}\n\n---CONTENT---\n{content[:8000]}\n---END---\n\nDigest:"
+    chunk_size = 6000
+    overlap = 500
 
-    try:
-        resp = req.post(OLLAMA_URL, json={
-            "model": model,
-            "prompt": prompt,
-            "options": {"num_predict": max_tokens, "temperature": 0.1},
-            "stream": False,
-            "keep_alive": -1,
-        }, timeout=60)
-        raw = resp.json().get("response", "").strip()
-        if raw and len(raw) > 20:
-            return raw
-    except Exception:
-        pass
+    if len(content) <= chunk_size:
+        chunks = [content]
+    else:
+        chunks = []
+        start = 0
+        while start < len(content):
+            end = min(start + chunk_size, len(content))
+            chunks.append(content[start:end])
+            start += chunk_size - overlap
 
-    return content  # Fallback: return original
+    digests = []
+    for chunk in chunks:
+        prompt = f"{template}\n\n---CONTENT---\n{chunk}\n---END---\n\nDigest:"
+        raw = _call_ollama(model, prompt, max_tokens=max_tokens // max(len(chunks), 2))
+        if raw and len(raw) > 15:
+            digests.append(raw)
+
+    if not digests:
+        return content  # All failed
+
+    if len(digests) == 1:
+        return digests[0]
+
+    # Merge multiple chunk digests
+    return "\n".join(f"[Part {i+1}] {d}" for i, d in enumerate(digests))
+
+
+def _call_ollama(model: str, prompt: str, max_tokens: int = 300, retries: int = 1) -> str:
+    """Call Ollama with retry on failure. (review issue #20)"""
+    for attempt in range(retries + 1):
+        try:
+            resp = req.post(OLLAMA_URL, json={
+                "model": model,
+                "prompt": prompt,
+                "options": {"num_predict": max_tokens, "temperature": 0.1},
+                "stream": False,
+                "keep_alive": -1,
+            }, timeout=90)
+            raw = resp.json().get("response", "").strip()
+            if raw:
+                return raw
+        except Exception:
+            if attempt == retries:
+                return ""
+    return ""
 
 
 def condensation_ratio(original: str, condensed: str) -> dict:

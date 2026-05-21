@@ -144,25 +144,49 @@ def tree_view(path: str, depth: int = 2, exclude: str = "__pycache__,.git,node_m
     _walk(p, "", 1)
     return "\n".join(lines)
 
+# Per-language outline patterns (review #14)
+_OUTLINE_PATTERNS = {
+    ".py":  [(r"^(\s*)(def |class |async def )(\w+)", "py")],
+    ".js":  [(r"^(\s*)(function |class |const |let |var )(\w+)", "js"),
+             (r"^(\s*)(export (?:default )?(?:function |class |const |let |var ))(\w+)", "js")],
+    ".ts":  [(r"^(\s*)(function |class |const |interface |type |enum |export (?:default )?(?:function |class |const |interface |type |enum ))(\w+)", "ts")],
+    ".tsx": [(r"^(\s*)(function |class |const |interface |type |export (?:default )?(?:function |class |const ))(\w+)", "tsx")],
+    ".go":  [(r"^(\s*)(func |type |var |const )(\w+)", "go")],
+    ".rs":  [(r"^(\s*)(fn |pub fn |struct |enum |trait |impl |mod |const |type )(\w+)", "rs")],
+    ".java":[(r"^(\s*)(public |private |protected )?(class |interface |enum |@\w+\n\s*)?(\w+)", "java")],
+    ".rb":  [(r"^(\s*)(def |class |module |attr_)(\w+)", "rb")],
+    ".sh":  [(r"^(\s*)(\w+\(\)|function \w+)", "sh")],
+    ".sql": [(r"^(?i)(CREATE (?:TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|TRIGGER) )(\w+)", "sql")],
+}
+
+
 def outline_file(path: str) -> str:
     p = Path(os.path.expanduser(path))
     if not p.exists():
         return f"File not found: {path}"
     text = p.read_text(errors="replace")
     lines = text.splitlines()
+    suffix = p.suffix.lower()
+    patterns = _OUTLINE_PATTERNS.get(suffix, _OUTLINE_PATTERNS.get(".py"))
     results = []
+
     for i, line in enumerate(lines):
-        m = re.match(r"^(\s*)(def |class |async def )(\w+)", line)
-        if m:
-            indent = len(m.group(1)) // 4
-            kind   = m.group(2).strip()
-            name   = m.group(3)
-            doc = ""
-            if i + 1 < len(lines):
-                dl = lines[i + 1].strip()
-                if dl.startswith('"""') or dl.startswith("'''"):
-                    doc = " — " + dl.strip('"\' ')[:60]
-            results.append(f"{'  ' * indent}{kind} {name}{doc}  [L{i+1}]")
+        for regex, _ in patterns:
+            m = re.match(regex, line)
+            if m:
+                indent = len(m.group(1) or "") // 4
+                # Extract kind and name from match groups
+                all_groups = m.groups()
+                kind = all_groups[-2].strip() if len(all_groups) >= 3 else ""
+                name = all_groups[-1]
+                doc = ""
+                if i + 1 < len(lines):
+                    dl = lines[i + 1].strip()
+                    if dl.startswith('"""') or dl.startswith("'''") or dl.startswith("//") or dl.startswith("--"):
+                        doc = " — " + dl.strip('"\' /-')[:60]
+                results.append(f"{'  ' * indent}{kind} {name}{doc}  [L{i+1}]")
+                break  # one match per line
+
     return "\n".join(results) or "(no functions/classes found)"
 
 def write_to_file(path: str, content: str) -> str:

@@ -1,5 +1,5 @@
 """
-Miser v1.1 — Claude Code's local co-processor.
+Miser v1.2 — Claude Code's local co-processor.
 Two execution paths:
   1. Zero-LLM (<50ms): shell, file read/write/grep/tree/exists/outline/patch
   2. Local LLM (no API cost): summarize, codegen, explain, fix, test, review, git_summary
@@ -32,7 +32,8 @@ console = Console()
 app = Flask(__name__)
 
 MODEL = os.environ.get("MISER_MODEL", "miser-qwen")
-AUTH_TOKEN = os.environ.get("MISER_AUTH_TOKEN", "")   # review item #4: optional token
+AUTH_TOKEN = os.environ.get("MISER_AUTH_TOKEN", "")   # review item #4
+PORT = int(os.environ.get("MISER_PORT", "7860"))        # review item #16: optional token
 
 adapter = ModelAdapter(MODEL)
 mem = Memory()
@@ -571,9 +572,22 @@ if __name__ == "__main__":
     import logging
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
-    # Review item #12: threaded=True is deprecated in Flask 2.3+, removed.
+    # Logging setup (review item #18)
+    import logging as _log
+    _log.basicConfig(
+        level=_log.INFO,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        handlers=[
+            _log.FileHandler(Path(__file__).parent / "miser.log"),
+            _log.StreamHandler(),
+        ]
+    )
+    _log.getLogger("werkzeug").setLevel(_log.WARNING)
+
+    _log.info(f"Miser v1.2 starting on port {PORT} (model={MODEL})")
+
     threading.Thread(
-        target=lambda: app.run(host="0.0.0.0", port=7860),
+        target=lambda: app.run(host="0.0.0.0", port=PORT),
         daemon=True
     ).start()
 
@@ -590,7 +604,7 @@ if __name__ == "__main__":
 
     auth_note = "[yellow]AUTH enabled[/yellow]" if AUTH_TOKEN else "no auth"
     console.print(Panel(
-        "[bold cyan]Miser v1.1[/bold cyan]  ·  Claude Code's local co-processor\n\n"
+        "[bold cyan]Miser v1.2[/bold cyan]  ·  Claude Code's local co-processor\n\n"
         "[bold]Zero-LLM endpoints (<50ms):[/bold]\n"
         "  [green]/run /read /grep /outline /tree /exists /write /patch[/green]\n\n"
         "[bold]Local-LLM endpoints (0 API tokens):[/bold]\n"

@@ -1,5 +1,5 @@
 """
-Miser v1.1 client for Claude Code — with quality assurance.
+Miser v1.2 client for Claude Code — with quality assurance.
 
 Usage:
     import sys; sys.path.insert(0, '/path/to/miser')

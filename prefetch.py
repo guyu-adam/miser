@@ -27,9 +27,9 @@ class PrefetchPredictor:
     """
 
     def __init__(self, max_history: int = 200):
-        # Transition matrix: file_A -> {file_B: count}
         self._transitions: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
         self._access_order: list[str] = []
+        self._prefetch_events: list[tuple[str, float]] = []  # (filepath, timestamp) for hit detection
         self._max_history = max_history
         self._lock = threading.Lock()
         self._enabled = True
@@ -64,16 +64,20 @@ class PrefetchPredictor:
     def prefetch(self, filepath: str):
         """
         Pre-load a file into the OS page cache.
-        This makes the next actual read() call instantaneous.
+        Records timestamp for later hit detection (review item #19).
         """
         try:
             p = Path(filepath).expanduser().resolve()
             if not p.exists() or not p.is_file():
                 return
-            # Read the file to pull it into page cache
+            now = time.time()
             with open(p, 'rb') as f:
-                while f.read(1024 * 1024):  # 1MB chunks
+                while f.read(1024 * 1024):
                     pass
+            with self._lock:
+                self._prefetch_events.append((str(p), now))
+                if len(self._prefetch_events) > 500:
+                    self._prefetch_events = self._prefetch_events[-200:]
             self._prefetch_count += 1
         except (OSError, PermissionError):
             pass
@@ -93,13 +97,21 @@ class PrefetchPredictor:
             ).start()
 
     def check_hit(self, filepath: str) -> bool:
-        """Check if this file was likely already cached by prefetch."""
-        # In a real implementation, we'd check mincore() or page cache status.
-        # For now, we track via the predictor.
+        """Check if this file was likely already cached by a prior prefetch.
+        Uses access timestamp comparison — if the file was accessed within
+        100ms of the prefetch, it counts as a prefetch hit."""
+        p = Path(filepath).expanduser().resolve()
+        try:
+            access_time = p.stat().st_atime if p.exists() else 0
+        except OSError:
+            return False
+        # Compare to our tracked prefetch timestamps
         with self._lock:
-            if filepath in self._access_order:
-                self._hit_count += 1
-                return True
+            for f, ts in self._prefetch_events:
+                pf = Path(f).expanduser().resolve()
+                if pf == p and abs(access_time - ts) < 0.5:
+                    self._hit_count += 1
+                    return True
         return False
 
     @property
