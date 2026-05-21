@@ -569,11 +569,9 @@ def note():
 # ── main ─────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    import logging
-    logging.getLogger("werkzeug").setLevel(logging.ERROR)
-
-    # Logging setup (review item #18)
     import logging as _log
+    _log.getLogger("werkzeug").setLevel(_log.WARNING)
+
     _log.basicConfig(
         level=_log.INFO,
         format='%(asctime)s [%(levelname)s] %(message)s',

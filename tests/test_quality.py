@@ -1,6 +1,4 @@
 """Tests for quality.py and adaptive.py — routing decisions."""
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from quality import classify_op, should_offload, estimate_confidence
 
 

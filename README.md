@@ -38,7 +38,7 @@ Generate unit tests                  900           $0      900   100%
 TOTAL                             19,133          253   18,880    98%
 ─────────────────────────────────────────────────────────────────────
 
-💰 Per session:  $0.0574 → $0.0008  (18,880 tokens saved)
+💰 Per session:  $0.0574 → $0.0008  (~18,880 tokens saved (estimated))
    Per month:     $3.44   → $0.05    ($3.40 saved)
    Per year:      $41.33  → $0.55    ($40.78 saved)
 ```
@@ -73,16 +73,32 @@ Miser intercepts those calls and handles them locally:
 | Read to understand module | `W.explain(path)` | **$0.00** (local GPU) |
 | Code review | `W.review(path)` | **$0.00** (local GPU) |
 
-**Real measurement (May 2026): saves 18,880 tokens per session — 98% reduction.**
+**~18,880 tokens saved per session — ~98% reduction.**
 
 ---
 
 ## Quick Start
 
+### Linux / macOS
 ```bash
 git clone https://github.com/guyu-adam/miser.git
 cd miser
 bash install.sh          # installs deps, pulls qwen3.5:4b, starts service
+```
+
+### Windows
+```powershell
+git clone https://github.com/guyu-adam/miser.git
+cd miser
+pip install flask requests rich
+ollama pull qwen3.5:4b
+python miser.py          # server starts on http://localhost:7860
+```
+No auto-start on Windows — keep the terminal open or use Task Scheduler to run `python miser.py` at login.
+
+### pip install (all platforms)
+```bash
+pip install -e .         # editable install, then import miser from anywhere
 ```
 
 Then in your Claude Code session (or any agent):

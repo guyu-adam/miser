@@ -110,8 +110,16 @@ def distill(content: str, category: str = "code_file",
     if len(digests) == 1:
         return digests[0]
 
-    # Merge multiple chunk digests
-    return "\n".join(f"[Part {i+1}] {d}" for i, d in enumerate(digests))
+    # Merge with dedup on function/signature-level lines (review #24)
+    merged = []
+    seen_lines = set()
+    for i, d in enumerate(digests):
+        for line in d.split("\n"):
+            norm = line.strip().lower()[:60]
+            if norm and norm not in seen_lines:
+                seen_lines.add(norm)
+                merged.append(f"[Part {i+1}] {line}" if len(digests) > 1 else line)
+    return "\n".join(merged)
 
 
 def _call_ollama(model: str, prompt: str, max_tokens: int = 300, retries: int = 1) -> str:
