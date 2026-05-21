@@ -4,17 +4,18 @@ model_adapter.py — Multi-model prompt formatting for Miser.
 Detects model family from the model name and returns the correct
 raw prompt format + response post-processor for each family.
 
-Supported families:
-  qwen3 / qwen3.5   — chatml + forced <think></think> skip
-  qwen2.5 / qwen2   — standard chatml, no thinking
-  llama3.x          — chatml (llama3 uses same format)
-  llama2            — [INST]...[/INST] format
-  mistral / mixtral — [INST]...[/INST] format
-  phi3 / phi4       — <|user|>...<|assistant|> format
-  gemma / gemma3    — <start_of_turn> format
-  deepseek-coder    — chatml (deepseek uses chatml)
-  deepseek-r1       — chatml + thinking (like qwen3)
-  default           — chat API, no raw format
+Supported families (2026 updated):
+  qwen3 / qwen3.5 / qwen3.6 / qwen3-coder — chatml + <think> for 3.x
+  qwen2.5 / qwen2 / qwen2.5-coder — standard chatml
+  llama4           — ChatML (same as llama3)
+  llama3 / llama3.1 / llama3.2 / llama3.3 — ChatML
+  llama2           — [INST]...[/INST] format
+  mistral / mixtral / mistral-small / mistral3 — [INST]...[/INST]
+  phi3 / phi4      — <|user|>...<|assistant|> format
+  gemma / gemma3   — <start_of_turn> format
+  deepseek / deepseek-coder / deepseek-v3 — ChatML
+  deepseek-r1 / deepseek-r2 — ChatML + thinking
+  default          — chat API, no raw format
 """
 
 import re
@@ -59,28 +60,66 @@ def _ollama_family(model_name: str) -> str:
 def detect_family(model_name: str) -> str:
     # First try name-based detection (fast, no network)
     n = model_name.lower()
-    if re.search(r'qwen3\.5|qwen3', n):
+    # Qwen family (2024-2026: 2.5, 3, 3.5, 3.6, coder variants)
+    if re.search(r'qwen3\.6|qwen3-6', n):
         return "qwen3"
-    if re.search(r'qwen2\.5|qwen2', n):
+    if re.search(r'qwen3\.5|qwen3-5', n):
+        return "qwen3"
+    if re.search(r'qwen3-coder|qwen3coder|qwen.*coder', n):
+        return "qwen3"
+    if re.search(r'qwen3|qwen-3', n):
+        return "qwen3"
+    if re.search(r'qwen2\.5|qwen2-5|qwen2', n):
         return "qwen2"
-    if re.search(r'llama3|llama-3', n):
+    # Llama family (2024-2026: 3.1, 3.2, 3.3, 4)
+    if re.search(r'llama-?4|llama4', n):
+        return "llama4"
+    if re.search(r'llama-?3\.[23]|llama3\.[23]', n):
         return "llama3"
-    if re.search(r'llama2|llama-2', n):
+    if re.search(r'llama-?3|llama3', n):
+        return "llama3"
+    if re.search(r'llama-?2|llama2', n):
         return "llama2"
+    # Mistral family (2024-2026: v0.3, Small, Large, 3)
+    if re.search(r'mistral.*(?:3\b|small|large)', n):
+        return "mistral"
     if re.search(r'mistral|mixtral', n):
         return "mistral"
-    if re.search(r'phi4', n):
+    # Phi family (2024-2026: 3, 3.5, 4, 4-mini)
+    if re.search(r'phi-?4|phi4', n):
         return "phi4"
-    if re.search(r'phi3|phi-3', n):
+    if re.search(r'phi-?3|phi3', n):
         return "phi3"
-    if re.search(r'gemma3|gemma', n):
+    # Gemma family (2024-2026: 2, 3)
+    if re.search(r'gemma-?3|gemma3', n):
         return "gemma"
-    if re.search(r'deepseek-r1|deepseek_r1', n):
+    if re.search(r'gemma-?2|gemma2', n):
+        return "gemma"
+    if re.search(r'gemma', n):
+        return "gemma"
+    # DeepSeek family (2025-2026: V3, R1, R2, Coder V2)
+    if re.search(r'deepseek-r2|deepseek_r2|deepseek-r1|deepseek_r1', n):
         return "deepseek-r1"
+    if re.search(r'deepseek.*v3|deepseek.*v2', n):
+        return "deepseek"
+    if re.search(r'deepseek.*coder', n):
+        return "deepseek"
     if re.search(r'deepseek', n):
         return "deepseek"
+    # CodeLlama
     if re.search(r'codellama', n):
         return "llama3"
+    # Cohere Command R (2024-2025)
+    if re.search(r'command.?r', n):
+        return "default"  # chat API compatible, uses default path
+    # Yi family (2024-2025)
+    if re.search(r'yi-?2|yi2', n):
+        return "default"
+    if re.search(r'yi', n):
+        return "default"
+    # Nomic embed (used for embeddings only, skip prompt detection)
+    if re.search(r'nomic', n):
+        return "default"
     # Name didn't match — ask Ollama (handles aliases like miser-qwen)
     ollama_fam = _ollama_family(model_name)
     return ollama_fam if ollama_fam else "default"
@@ -88,12 +127,13 @@ def detect_family(model_name: str) -> str:
 
 def has_thinking(family: str) -> bool:
     """True if this model family does chain-of-thought in a <think> block."""
-    return family in ("qwen3", "deepseek-r1")
+    return family in ("qwen3", "deepseek-r1", "deepseek-r2")
 
 
 def use_raw_generate(family: str) -> bool:
     """True if we must use /api/generate (raw prompt) rather than /api/chat."""
-    return family in ("qwen3", "qwen2", "llama2", "mistral", "phi3", "phi4", "gemma", "deepseek-r1", "deepseek")
+    return family in ("qwen3", "qwen2", "llama4", "llama3", "llama2", "mistral",
+                       "phi3", "phi4", "gemma", "deepseek-r1", "deepseek")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -110,6 +150,16 @@ def build_prompt(family: str, system: str, user: str) -> str:
             f"<|im_start|>system\n{system}<|im_end|>\n"
             f"<|im_start|>user\n{user}<|im_end|>\n"
             f"<|im_start|>assistant\n{think_block}"
+        )
+
+    if family == "llama4":
+        # Llama 4 uses same ChatML format as Llama 3
+        return (
+            f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n"
+            f"{system}<|eot_id|>"
+            f"<|start_header_id|>user<|end_header_id|>\n"
+            f"{user}<|eot_id|>"
+            f"<|start_header_id|>assistant<|end_header_id|>\n"
         )
 
     if family == "llama3":
@@ -291,11 +341,28 @@ class ModelAdapter:
 # ──────────────────────────────────────────────────────────────────────────────
 
 RECOMMENDED_MODELS = {
-    "4b_apple_silicon": "qwen3.5:4b",
-    "4b_lightweight":   "qwen2.5:4b",
-    "7b_quality":       "mistral:7b",
-    "8b_llama":         "llama3.1:8b",
-    "code_focused":     "deepseek-coder:6.7b",
-    "phi_windows":      "phi4:latest",
-    "gemma_google":     "gemma3:4b",
+    # Speed-optimized (<2s responses)
+    "4b_speed_qwen35":     "qwen3.5:4b",         # Default, 3.4GB, best all-around
+    "4b_speed_qwen3":      "qwen3:4b",            # Lighter, 2.5GB
+    "4b_speed_llama4":     "llama4:latest",       # Latest Llama 4 Scout
+
+    # Quality-optimized (3-10s, smarter)
+    "8b_quality_qwen35":   "qwen3.5:latest",      # Qwen 3.5 8B coding focus
+    "8b_quality_llama4":   "llama3.1:8b",         # Llama 3.1 8B, battle-tested
+    "7b_quality_mistral":  "mistral:7b",           # Mistral 7B, strong reasoning
+    "7b_quality_mistral3": "mistral-small:latest", # Mistral Small 3 (2026)
+
+    # Code-optimized
+    "code_qwen3_coder":    "qwen3-coder:latest",   # Qwen 3 Coder (2026)
+    "code_deepseek_v3":    "deepseek-coder:6.7b",  # DeepSeek Coder V2
+    "code_qwen25_coder":   "qwen2.5-coder:7b",     # Qwen 2.5 Coder
+
+    # Platform-optimized
+    "phi4_windows":        "phi4:latest",           # Phi-4, fast on Windows
+    "gemma3_google":       "gemma3:4b",             # Gemma 3, good for summaries
+
+    # Thinking/CoT models
+    "think_deepseek_r1":   "deepseek-r1:7b",        # DeepSeek R1, chain-of-thought
+    "think_deepseek_r2":   "deepseek-r2:7b",        # DeepSeek R2 (2026)
+    "think_qwen3":         "qwen3:8b",              # Qwen 3 with think block
 }

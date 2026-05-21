@@ -6,7 +6,7 @@
 # Usage:  bash install.sh
 set -euo pipefail
 
-MISER_DIR="$(cd "$(dirname "$0")" && pwd)"
+MISER_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PYTHON="${PYTHON:-python3}"
 CLAUDE_MD="$HOME/.claude/CLAUDE.md"
 
@@ -58,7 +58,7 @@ green "✓ qwen3.5:4b ready"
 # ── 6. Create miser-qwen alias ────────────────────────────────────────────────
 if ! ollama list 2>/dev/null | grep -q "miser-qwen"; then
     yellow "→ Creating miser-qwen model alias..."
-    MF="$MISER_DIR/Modelfile.qwen3.5-4b"
+    MF="$MISER_DIR/models/Modelfile.qwen3.5-4b"
     if [[ -f "$MF" ]]; then
         ollama create miser-qwen -f "$MF"
     else
@@ -72,20 +72,20 @@ green "✓ miser-qwen alias ready"
 OS=$(uname -s)
 if [[ "$OS" == "Darwin" ]]; then
     PLIST_DEST="$HOME/Library/LaunchAgents/com.miser.plist"
-    sed "s|__MISER_DIR__|$MISER_DIR|g" "$MISER_DIR/com.miser.plist" > "$PLIST_DEST"
+    sed "s|__MISER_DIR__|$MISER_DIR|g" "$MISER_DIR/scripts/com.miser.plist" > "$PLIST_DEST"
     launchctl unload "$PLIST_DEST" 2>/dev/null || true
     launchctl load "$PLIST_DEST"
     green "✓ macOS LaunchAgent installed — Miser starts automatically on login"
 elif [[ "$OS" == "Linux" ]]; then
     SERVICE_DIR="$HOME/.config/systemd/user"
     mkdir -p "$SERVICE_DIR"
-    sed "s|__MISER_DIR__|$MISER_DIR|g" "$MISER_DIR/miser.service" > "$SERVICE_DIR/miser.service"
+    sed "s|__MISER_DIR__|$MISER_DIR|g" "$MISER_DIR/scripts/miser.service" > "$SERVICE_DIR/miser.service"
     systemctl --user daemon-reload
     systemctl --user enable miser
     systemctl --user start miser
     green "✓ systemd user service installed — Miser starts automatically on login"
 else
-    yellow "⚠ Windows: auto-start not yet supported. Run start.sh manually or on login."
+    yellow "⚠ Windows: auto-start not yet supported. Run scripts/start.sh manually or on login."
 fi
 
 # ── 8. Patch ~/.claude/CLAUDE.md ─────────────────────────────────────────────
@@ -110,7 +110,7 @@ from client import W
 try: W.status()
 except:
     import subprocess, time
-    subprocess.Popen(['bash', '$MISER_DIR/start.sh'],
+    subprocess.Popen(['bash', '$MISER_DIR/scripts/start.sh'],
                      stdout=open('/tmp/miser.log', 'w'), stderr=subprocess.STDOUT)
     time.sleep(5)
 import threading
@@ -130,7 +130,7 @@ threading.Thread(target=lambda: W.ask('ok', max_tokens=1), daemon=True).start()
 | Write boilerplate / tests | Generate yourself | \`W.test(path)\` / \`W.codegen(task)\` — 0 API tokens |
 | Multiple file lookups | Sequential Reads | \`W.batch([...])\` — one round-trip |
 
-Full API: \`$MISER_DIR/MISER_FOR_CLAUDE.md\`
+Full API: \`$MISER_DIR/docs/MISER_FOR_CLAUDE.md\`
 <!-- end-miser-block -->
 MISER_EOF
     green "✓ Patched ~/.claude/CLAUDE.md with Miser decision rules"
@@ -138,7 +138,7 @@ fi
 
 # ── 9. Start now ──────────────────────────────────────────────────────────────
 yellow "→ Starting Miser..."
-bash "$MISER_DIR/start.sh"
+bash "$MISER_DIR/scripts/start.sh"
 
 echo ""
 bold "╔══════════════════════════════════════╗"
@@ -146,7 +146,7 @@ bold "║   Miser v1.3 installed successfully  ║"
 bold "╚══════════════════════════════════════╝"
 echo "  Server : http://localhost:7860"
 echo "  Logs   : /tmp/miser.log"
-echo "  Stop   : bash $MISER_DIR/start.sh --stop"
-echo "  Remove : bash $MISER_DIR/uninstall.sh"
+echo "  Stop   : bash $MISER_DIR/scripts/start.sh --stop"
+echo "  Remove : bash $MISER_DIR/scripts/uninstall.sh"
 echo ""
 yellow "Restart Claude Code — it will use Miser automatically from now on."

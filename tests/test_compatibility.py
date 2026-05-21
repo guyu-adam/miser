@@ -135,8 +135,8 @@ class TestBulletModeExtraction:
 
 class TestRecommendedModelsIntegrity:
     def test_all_models_are_valid_families(self):
-        valid = {"qwen3", "qwen2", "llama3", "llama2", "mistral",
-                 "phi3", "phi4", "gemma", "deepseek-r1", "deepseek"}
+        valid = {"qwen3", "qwen2", "llama4", "llama3", "llama2", "mistral",
+                 "phi3", "phi4", "gemma", "deepseek-r1", "deepseek", "default"}
         for _, model in RECOMMENDED_MODELS.items():
             family = detect_family(model)
             assert family in valid or family == "default", \

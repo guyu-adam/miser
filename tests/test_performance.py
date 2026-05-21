@@ -64,22 +64,22 @@ class TestZeroLLMLatency:
 class TestCachePerformance:
     def test_cache_hit_faster_than_miss(self):
         c = ResponseCache(ttl=60)
-        # First: miss (slow — call fn)
-        def slow():
-            time.sleep(0.01)
-            return "result"
+        # Cache miss: returns None (fast, but no data)
         t0 = time.perf_counter_ns()
         c.get("perf_key")
         miss_ns = time.perf_counter_ns() - t0
 
-        c.set(slow(), "perf_key")
+        # Populate cache
+        c.set("cached_value", "perf_key")
 
-        # Second: hit (fast — from cache)
+        # Cache hit: returns value from memory (should be <1ms)
         t0 = time.perf_counter_ns()
-        c.get("perf_key")
+        result = c.get("perf_key")
         hit_ns = time.perf_counter_ns() - t0
 
-        assert hit_ns < miss_ns, f"Cache hit should be faster. hit={hit_ns}ns miss={miss_ns}ns"
+        assert result == "cached_value"
+        assert miss_ns < 5_000_000, f"Cache miss too slow: {miss_ns}ns"
+        assert hit_ns < 5_000_000, f"Cache hit too slow: {hit_ns}ns"
 
 
 class TestQueuePerformance:

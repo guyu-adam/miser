@@ -205,15 +205,17 @@ class TestModelAdapterClass:
         assert text == "Hello world"
 
     def test_extract_text_from_chat(self):
-        a = ModelAdapter("llama3.1:8b")
+        # Use a model that goes through chat API (not raw generate)
+        a = ModelAdapter("command-r:latest")
         text = a.extract_text({"message": {"content": "Hi there"}})
         assert text == "Hi there"
 
 
 class TestRecommendedModels:
     def test_all_categories_present(self):
-        keys = {"4b_apple_silicon", "4b_lightweight", "7b_quality",
-                "8b_llama", "code_focused", "phi_windows", "gemma_google"}
+        # Categories updated for 2026 models
+        keys = {"4b_speed_qwen35", "8b_quality_llama4", "7b_quality_mistral",
+                "code_qwen3_coder", "code_deepseek_v3", "phi4_windows", "gemma3_google"}
         assert set(RECOMMENDED_MODELS.keys()) >= keys
 
     def test_models_are_strings(self):
