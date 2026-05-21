@@ -1,11 +1,11 @@
 """
-Miser v1.0 — Claude Code's local co-processor.
+Miser v1.1 — Claude Code's local co-processor.
 Two execution paths:
   1. Zero-LLM (<50ms): shell, file read/write/grep/tree/exists/outline/patch
   2. Local LLM (no API cost): summarize, codegen, explain, fix, test, review, git_summary
 """
 
-import os, json, threading, time, re, subprocess, math, fnmatch
+import os, re, threading, time
 from datetime import datetime
 from pathlib import Path
 
@@ -19,126 +19,20 @@ from rich.panel import Panel
 from rich.rule import Rule
 
 from model_adapter import ModelAdapter
+from memory import Memory
+from tools import (
+    run_shell, read_file, list_dir, grep_file, tree_view, outline_file,
+    write_to_file, patch_file, extract_path, _safe_eval,
+    count_saved, get_tokens_saved, I18N_PATTERNS,
+)
 
 console = Console()
 app = Flask(__name__)
 
-MEMORY_FILE = Path(__file__).parent / "memory.json"
-EMBED_FILE  = Path(__file__).parent / "embeddings.json"
-EMBED_URL   = "http://localhost:11434/api/embeddings"
-EMBED_MODEL = "nomic-embed-text"
-MODEL       = os.environ.get("MISER_MODEL", "miser-qwen")
+MODEL = os.environ.get("MISER_MODEL", "miser-qwen")
+AUTH_TOKEN = os.environ.get("MISER_AUTH_TOKEN", "")   # review item #4: optional token
 
 adapter = ModelAdapter(MODEL)
-
-_tokens_saved = 0
-def _count_saved(chars: int):
-    global _tokens_saved
-    _tokens_saved += int(chars / 4)   # ~4 chars per token for code/English
-
-# ── memory ─────────────────────────────────────────────────────────────────────
-
-class Memory:
-    def __init__(self):
-        self.notes: dict = {}
-        self.history: list = []
-        self.embeddings: list = []
-        self._lock = threading.Lock()
-        self._load()
-
-    def _load(self):
-        if MEMORY_FILE.exists():
-            try:
-                d = json.loads(MEMORY_FILE.read_text())
-                self.notes   = d.get("notes", {})
-                self.history = d.get("history", [])
-            except Exception:
-                pass
-        if EMBED_FILE.exists():
-            try:
-                self.embeddings = json.loads(EMBED_FILE.read_text())
-            except Exception:
-                pass
-
-    def _save(self):
-        MEMORY_FILE.write_text(json.dumps(
-            {"notes": self.notes, "history": self.history[-40:]},
-            ensure_ascii=False, indent=2
-        ))
-
-    def _save_embeddings(self):
-        EMBED_FILE.write_text(json.dumps(self.embeddings[-40:], ensure_ascii=False))
-
-    def _embed(self, text: str) -> list:
-        try:
-            r = req.post(EMBED_URL, json={"model": EMBED_MODEL, "prompt": text}, timeout=10)
-            return r.json().get("embedding", [])
-        except Exception:
-            return []
-
-    def _cosine(self, a: list, b: list) -> float:
-        dot = sum(x * y for x, y in zip(a, b))
-        na  = math.sqrt(sum(x * x for x in a))
-        nb  = math.sqrt(sum(x * x for x in b))
-        return dot / (na * nb) if na and nb else 0.0
-
-    def clear(self):
-        with self._lock:
-            self.history = []
-            self.embeddings = []
-            self._save()
-            if EMBED_FILE.exists():
-                EMBED_FILE.unlink()
-
-    def save(self, key: str, val: str):
-        with self._lock:
-            self._load()
-            self.notes[key] = val
-            self._save()
-
-    def record(self, tid: int, task: str, result: str):
-        with self._lock:
-            self._load()
-            self.history.append({
-                "id": tid,
-                "time": datetime.now().strftime("%m-%d %H:%M"),
-                "task": task[:100],
-                "result": result[:200],
-            })
-            self._save()
-        def _do_embed():
-            emb = self._embed(task)
-            if emb:
-                with self._lock:
-                    self.embeddings.append({
-                        "id": tid, "task": task[:100],
-                        "result": result[:200], "emb": emb
-                    })
-                    self._save_embeddings()
-        threading.Thread(target=_do_embed, daemon=True).start()
-
-    def ctx(self, current_task: str = "") -> str:
-        out = []
-        if self.notes:
-            out.append("Notes: " + " | ".join(f"{k}={v}" for k, v in list(self.notes.items())[-6:]))
-        if not self.history:
-            return "\n".join(out)
-        if current_task and self.embeddings:
-            q_emb = self._embed(current_task)
-            if q_emb:
-                scored = sorted(
-                    self.embeddings, key=lambda e: self._cosine(q_emb, e["emb"]), reverse=True
-                )[:3]
-                out.append("Relevant: " + " | ".join(
-                    f"#{e['id']} \"{e['task'][:50]}\"→{e['result'][:60]}" for e in scored
-                ))
-                return "\n".join(out)
-        out.append("Recent: " + " | ".join(
-            f"#{h['id']} \"{h['task'][:50]}\"→{h['result'][:60]}"
-            for h in self.history[-3:]
-        ))
-        return "\n".join(out)
-
 mem = Memory()
 
 # ── state ───────────────────────────────────────────────────────────────────────
@@ -157,115 +51,14 @@ class State:
 
 st = State()
 
-# ── deterministic tools (zero LLM cost) ────────────────────────────────────────
+# ── auth helper (review item #4) ────────────────────────────────────────────────
 
-def _shell(cmd: str, timeout: int = 30) -> str:
-    r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
-    return (r.stdout + r.stderr).strip() or "(no output)"
-
-def _read(path: str, limit: int = 8000) -> str:
-    p = Path(os.path.expanduser(path))
-    if not p.exists():
-        return f"File not found: {path}"
-    text = p.read_text(errors="replace")
-    return text[:limit] + (f"\n...[truncated, total {len(text)} chars]" if len(text) > limit else "")
-
-def _ls(path: str, pattern: str = "*") -> str:
-    p = Path(os.path.expanduser(path))
-    if not p.exists():
-        return f"Path not found: {path}"
-    items = sorted(p.glob(pattern))
-    return "\n".join(
-        f"{'[dir]' if i.is_dir() else '[file]'} {i.name}  ({i.stat().st_size//1024}KB)"
-        for i in items
-    ) or "(empty)"
-
-def _grep_file(path: str, pattern: str, context: int = 2, ignore_case: bool = True) -> str:
-    p = Path(os.path.expanduser(path))
-    if not p.exists():
-        return f"File not found: {path}"
-    lines = p.read_text(errors="replace").splitlines()
-    flags = re.IGNORECASE if ignore_case else 0
-    try:
-        rx = re.compile(pattern, flags)
-    except re.error as e:
-        return f"Invalid pattern: {e}"
-    matches = []
-    seen = set()
-    for i, line in enumerate(lines):
-        if rx.search(line):
-            start = max(0, i - context)
-            end   = min(len(lines), i + context + 1)
-            for j in range(start, end):
-                if j not in seen:
-                    seen.add(j)
-                    matches.append(f"{j+1:4d}  {lines[j]}")
-            matches.append("---")
-    return "\n".join(matches).rstrip("---").strip() or f"No matches for: {pattern}"
-
-def _tree(path: str, depth: int = 2, exclude: str = "__pycache__,.git,node_modules,.DS_Store") -> str:
-    p = Path(os.path.expanduser(path))
-    if not p.exists():
-        return f"Path not found: {path}"
-    excl = set(exclude.split(","))
-    lines = [str(p)]
-    def _walk(d: Path, prefix: str, level: int):
-        if level > depth:
-            return
-        try:
-            entries = sorted(d.iterdir(), key=lambda x: (x.is_file(), x.name))
-        except PermissionError:
-            return
-        entries = [e for e in entries if e.name not in excl]
-        for i, e in enumerate(entries):
-            is_last = i == len(entries) - 1
-            conn = "└── " if is_last else "├── "
-            size = f" ({e.stat().st_size//1024}KB)" if e.is_file() else ""
-            lines.append(f"{prefix}{conn}{e.name}{size}")
-            if e.is_dir() and level < depth:
-                ext = "    " if is_last else "│   "
-                _walk(e, prefix + ext, level + 1)
-    _walk(p, "", 1)
-    return "\n".join(lines)
-
-def _outline(path: str) -> str:
-    p = Path(os.path.expanduser(path))
-    if not p.exists():
-        return f"File not found: {path}"
-    text = p.read_text(errors="replace")
-    lines = text.splitlines()
-    results = []
-    for i, line in enumerate(lines):
-        m = re.match(r"^(\s*)(def |class |async def )(\w+)", line)
-        if m:
-            indent = len(m.group(1)) // 4
-            kind   = m.group(2).strip()
-            name   = m.group(3)
-            doc = ""
-            if i + 1 < len(lines):
-                dl = lines[i + 1].strip()
-                if dl.startswith('"""') or dl.startswith("'''"):
-                    doc = " — " + dl.strip('"\' ')[:60]
-            results.append(f"{'  ' * indent}{kind} {name}{doc}  [L{i+1}]")
-    return "\n".join(results) or "(no functions/classes found)"
-
-def _write_file(path: str, content: str) -> str:
-    p = Path(os.path.expanduser(path))
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content)
-    return f"Written {len(content)} chars to {path}"
-
-def _patch_file(path: str, old: str, new: str) -> str:
-    p = Path(os.path.expanduser(path))
-    if not p.exists():
-        return f"File not found: {path}"
-    text = p.read_text(errors="replace")
-    count = text.count(old)
-    if count == 0:
-        return f"Pattern not found in {path}"
-    updated = text.replace(old, new, 1)
-    p.write_text(updated)
-    return f"Patched {path}: replaced 1/{count} occurrence(s), {len(old)}→{len(new)} chars"
+def _check_auth(req_data: dict) -> bool:
+    """If AUTH_TOKEN is configured, require it in every request."""
+    if not AUTH_TOKEN:
+        return True
+    token = (req_data or {}).get("_token", "")
+    return token == AUTH_TOKEN
 
 # ── LLM call ────────────────────────────────────────────────────────────────────
 
@@ -298,44 +91,67 @@ def llm(task: str, system: str = "", max_tokens: int = 600, mode: str = "text") 
                 return f"ERROR: {e}"
     return "(no response)"
 
-# ── routing ──────────────────────────────────────────────────────────────────────
+# ── explicit routing (review item #9) ───────────────────────────────────────────
 
-DIRECT_ROUTES = [
-    (re.compile(r"(ls|list|列出?|有什么|有哪些).{0,20}?(文件|folder|目录|dir|~/|/\w)", re.I),
-     lambda t: _ls(_extract_path(t, "~/Desktop"))),
-    (re.compile(r"^(run|exec|执行|运行)[：:\s]+(.+)", re.I | re.S),
-     lambda t: _shell(re.search(r"^(?:run|exec|执行|运行)[：:\s]+(.+)", t, re.I | re.S).group(1))),
-    (re.compile(r"(几点|current time|what time|现在时间)", re.I),
+EXPLICIT_ROUTES = {
+    "outline":  lambda d: outline_file(d.get("path", "")),
+    "grep":     lambda d: grep_file(d.get("path",""), d.get("pattern",""),
+                                     d.get("context",2), d.get("ignore_case",True)),
+    "tree":     lambda d: tree_view(d.get("path","~/Desktop"), d.get("depth",2),
+                                     d.get("exclude","__pycache__,.git,node_modules,.DS_Store")),
+    "read":     lambda d: read_file(d.get("path",""), d.get("limit",8000)),
+    "exists":   lambda d: str(Path(os.path.expanduser(d.get("path",""))).exists()),
+    "write":    lambda d: write_to_file(d.get("path",""), d.get("content","")),
+    "patch":    lambda d: patch_file(d.get("path",""), d.get("old",""), d.get("new","")),
+    "run":      lambda d: run_shell(d.get("cmd",""), d.get("timeout",30)),
+    "ls":       lambda d: list_dir(d.get("path","~/Desktop"), d.get("pattern","*")),
+    "calc":     lambda d: _safe_eval(d.get("expr","0")),   # review item #1
+}
+
+# Legacy regex routing — now only for /ask fallback (review item #9)
+FALLBACK_ROUTES = [
+    (re.compile(I18N_PATTERNS["list_files"] + r".{0,20}?" + I18N_PATTERNS["file_dir_words"], re.I),
+     lambda t: list_dir(extract_path(t, "~/Desktop"))),
+    (re.compile(I18N_PATTERNS["run_cmd"] + r"[：:\s]+(.+)", re.I | re.S),
+     lambda t: run_shell(re.search(r"^(?:run|exec|执行|运行)[：:\s]+(.+)", t, re.I | re.S).group(1))),
+    (re.compile(I18N_PATTERNS["time_query"], re.I),
      lambda _: datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
     (re.compile(r"^[\d\s\+\-\*\/\.\^\(\)]+$"),
-     lambda t: str(eval(t.replace("^", "**")))),
-    (re.compile(r"(exists?|存在|有没有).{0,30}?(file|文件|目录|dir|~/|/\w)", re.I),
-     lambda t: str(Path(os.path.expanduser(_extract_path(t, ""))).exists())),
+     lambda t: _safe_eval(t)),    # review item #1
+    (re.compile(I18N_PATTERNS["exists_query"] + r".{0,30}?" + I18N_PATTERNS["file_dir_words"], re.I),
+     lambda t: str(Path(os.path.expanduser(extract_path(t, ""))).exists())),
 ]
 
-def _extract_path(task: str, default: str) -> str:
-    m = re.search(r"(~/[^\s,;'\"\)]+|/[^\s,;'\"\)]+)", task)
-    if m: return m.group(1)
-    for kw, path in [("桌面","~/Desktop"),("desktop","~/Desktop"),("下载","~/Downloads")]:
-        if kw.lower() in task.lower(): return path
-    return default
+def route(task: str, explicit_type: str = "") -> tuple[str, str]:
+    """Route a task to either a direct (zero-LLM) handler or LLM.
+    If explicit_type is set, try explicit routes first."""
+    if explicit_type and explicit_type in EXPLICIT_ROUTES:
+        try:
+            return "direct", EXPLICIT_ROUTES[explicit_type]({})
+        except Exception as e:
+            return "direct", f"Error: {e}"
 
-def route(task: str) -> tuple[str, str]:
-    for pattern, fn in DIRECT_ROUTES:
+    if explicit_type == "ask":
+        return "llm", ""
+
+    # Fallback: legacy regex routing (review item #9)
+    for pattern, fn in FALLBACK_ROUTES:
         if pattern.search(task):
             try:
                 return "direct", fn(task)
             except Exception as e:
                 return "direct", f"Error: {e}"
+
     return "llm", ""
 
 # ── task runner ──────────────────────────────────────────────────────────────────
 
-def run_task(task: str, sender: str, system: str = "", max_tokens: int = 600) -> str:
+def run_task(task: str, sender: str, system: str = "", max_tokens: int = 600,
+             explicit_type: str = "") -> str:
     st.count += 1
     st.set("WORKING", task)
     ts = datetime.now().strftime("%H:%M:%S")
-    mode, pre = route(task)
+    mode, pre = route(task, explicit_type)
     console.print()
     console.print(Rule(f"[cyan]#{st.count}  {ts}  [{mode}]  {sender}[/cyan]"))
     console.print(f"[yellow]▶ {task[:120]}[/yellow]\n")
@@ -343,7 +159,7 @@ def run_task(task: str, sender: str, system: str = "", max_tokens: int = 600) ->
         result = pre if mode == "direct" else llm(task, system, max_tokens)
         st.result = result
         mem.record(st.count, task, result)
-        _count_saved(len(result))
+        count_saved(len(result))
         console.print(Panel(result[:1000], title="[green]✓[/green]", border_style="green"))
     except Exception as e:
         result = f"ERROR: {e}"
@@ -355,6 +171,9 @@ def run_task(task: str, sender: str, system: str = "", max_tokens: int = 600) ->
 
 # ── endpoints ────────────────────────────────────────────────────────────────────
 
+def _auth_fail():
+    return jsonify({"error": "unauthorized — MISER_AUTH_TOKEN required"}), 401
+
 @app.route("/status")
 def status():
     return jsonify({
@@ -362,7 +181,7 @@ def status():
         "task":             st.task,
         "count":            st.count,
         "last":             st.result,
-        "tokens_saved_est": _tokens_saved,
+        "tokens_saved_est": get_tokens_saved(),      # review item #3: thread-safe
         "model":            MODEL,
         "model_family":     adapter.family,
     })
@@ -374,46 +193,51 @@ def memory():
 @app.route("/ask", methods=["POST"])
 def ask():
     d = request.json or {}
+    if not _check_auth(d): return _auth_fail()       # review item #4
     task = d.get("task","").strip()
     if not task: return jsonify({"error":"task required"}), 400
     if st.status == "WORKING": return jsonify({"error":"busy"}), 429
-    result = run_task(task, d.get("from","?"), d.get("system",""), d.get("max_tokens",600))
+    result = run_task(task, d.get("from","?"), d.get("system",""),
+                      d.get("max_tokens",600), d.get("type","ask"))
     ok = not result.startswith("ERROR:")
     return jsonify({"result": result} if ok else {"error": result}), (200 if ok else 500)
 
 @app.route("/chat", methods=["POST"])
 def chat():
     d = request.json or {}
+    if not _check_auth(d): return _auth_fail()
     task = d.get("task","").strip()
     if not task: return jsonify({"error":"task required"}), 400
     if st.status == "WORKING": return jsonify({"error":"busy"}), 429
     threading.Thread(target=run_task, args=(task, d.get("from","?"),
-                     d.get("system",""), d.get("max_tokens",600)), daemon=True).start()
+                     d.get("system",""), d.get("max_tokens",600), d.get("type","")),
+                     daemon=True).start()
     return jsonify({"accepted": True})
 
 @app.route("/run", methods=["POST"])
 def run_cmd():
     d = request.json or {}
+    if not _check_auth(d): return _auth_fail()
     cmd = d.get("cmd","").strip()
     if not cmd: return jsonify({"error":"cmd required"}), 400
     ts = datetime.now().strftime("%H:%M:%S")
     console.print(Rule(f"[green]shell  {ts}[/green]"))
     console.print(f"[dim]$ {cmd}[/dim]")
     try:
-        out = _shell(cmd, timeout=d.get("timeout", 30))
-        _count_saved(len(out))
+        out = run_shell(cmd, timeout=d.get("timeout", 30))
+        count_saved(len(out))
         console.print(f"[dim]{out[:300]}[/dim]")
         return jsonify({"output": out})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route("/read", methods=["POST"])
-def read_file():
+def read_file_ep():
     d = request.json or {}
     path = d.get("path","").strip()
     if not path: return jsonify({"error":"path required"}), 400
-    content = _read(path, d.get("limit", 8000))
-    _count_saved(len(content))
+    content = read_file(path, d.get("limit", 8000))
+    count_saved(len(content))
     console.print(Rule(f"[green]read  {path}[/green]"))
     return jsonify({"content": content, "path": path})
 
@@ -426,8 +250,8 @@ def grep():
         return jsonify({"error":"path and pattern required"}), 400
     ts = datetime.now().strftime("%H:%M:%S")
     console.print(Rule(f"[green]grep  {ts}[/green]"))
-    result = _grep_file(path, pattern, d.get("context", 2), d.get("ignore_case", True))
-    _count_saved(len(_read(path, 99999)) - len(result))
+    result = grep_file(path, pattern, d.get("context", 2), d.get("ignore_case", True))
+    count_saved(len(read_file(path, 99999)) - len(result))
     return jsonify({"matches": result, "path": path, "pattern": pattern})
 
 @app.route("/outline", methods=["POST"])
@@ -437,8 +261,8 @@ def outline():
     if not path: return jsonify({"error":"path required"}), 400
     ts = datetime.now().strftime("%H:%M:%S")
     console.print(Rule(f"[green]outline  {ts}[/green]"))
-    result = _outline(path)
-    _count_saved(len(_read(path, 99999)) - len(result))
+    result = outline_file(path)
+    count_saved(len(read_file(path, 99999)) - len(result))
     console.print(f"[dim]{result[:400]}[/dim]")
     return jsonify({"outline": result, "path": path})
 
@@ -449,8 +273,8 @@ def tree():
     depth = int(d.get("depth", 2))
     ts    = datetime.now().strftime("%H:%M:%S")
     console.print(Rule(f"[green]tree  {ts}[/green]"))
-    result = _tree(path, depth, d.get("exclude", "__pycache__,.git,node_modules,.DS_Store"))
-    _count_saved(len(result) * 3)
+    result = tree_view(path, depth, d.get("exclude", "__pycache__,.git,node_modules,.DS_Store"))
+    count_saved(len(result) * 3)
     return jsonify({"tree": result, "path": path})
 
 @app.route("/exists", methods=["POST"])
@@ -467,16 +291,17 @@ def exists():
     return jsonify(info)
 
 @app.route("/write", methods=["POST"])
-def write_file():
+def write_file_ep():
     d = request.json or {}
+    if not _check_auth(d): return _auth_fail()       # write requires auth
     path    = d.get("path","").strip()
     content = d.get("content","")
     if not path: return jsonify({"error":"path required"}), 400
     ts = datetime.now().strftime("%H:%M:%S")
     console.print(Rule(f"[green]write  {ts}[/green]"))
     try:
-        result = _write_file(path, content)
-        _count_saved(len(content))
+        result = write_to_file(path, content)
+        count_saved(len(content))
         return jsonify({"result": result, "path": path, "chars": len(content)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -484,6 +309,7 @@ def write_file():
 @app.route("/patch", methods=["POST"])
 def patch():
     d = request.json or {}
+    if not _check_auth(d): return _auth_fail()       # patch requires auth
     path = d.get("path","").strip()
     old  = d.get("old","")
     new  = d.get("new","")
@@ -491,7 +317,7 @@ def patch():
     ts = datetime.now().strftime("%H:%M:%S")
     console.print(Rule(f"[green]patch  {ts}[/green]"))
     try:
-        result = _patch_file(path, old, new)
+        result = patch_file(path, old, new)
         return jsonify({"result": result})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -501,7 +327,7 @@ def summarize():
     d = request.json or {}
     focus = d.get("focus", "key logic and structure")
     if "path" in d:
-        content = _read(d["path"], limit=7000)
+        content = read_file(d["path"], limit=7000)
         label = d["path"]
     elif "text" in d:
         content = d["text"][:7000]
@@ -516,7 +342,7 @@ def summarize():
     result = llm(f"Focus on: {focus}\n\nContent:\n{content}",
                  system="Summarize in ≤6 concise bullet points. Facts only. No preamble.\n",
                  max_tokens=400)
-    _count_saved(full_len - len(result))
+    count_saved(full_len - len(result))
     console.print(Panel(result, title="[magenta]summary[/magenta]", border_style="magenta"))
     return jsonify({"summary": result, "source": label, "original_chars": full_len})
 
@@ -540,7 +366,7 @@ def codegen():
 def explain():
     d = request.json or {}
     if "path" in d:
-        content = _read(d["path"], limit=4000)
+        content = read_file(d["path"], limit=4000)
         label = d["path"]
         if content.startswith("File not found"):
             return jsonify({"error": content}), 404
@@ -554,7 +380,7 @@ def explain():
     result = llm(f"Explain this code:\n\n{content}",
                  system="One sentence summary, then bullet points for key logic. No fences.\n",
                  max_tokens=400)
-    _count_saved(len(content))
+    count_saved(len(content))
     console.print(Panel(result[:600], title="[blue]explanation[/blue]", border_style="blue"))
     return jsonify({"explanation": result, "source": label})
 
@@ -581,9 +407,9 @@ def gen_tests():
     d = request.json or {}
     fn_name = d.get("function", "")
     if "path" in d:
-        content = _read(d["path"], limit=3000)
+        content = read_file(d["path"], limit=3000)
         if fn_name:
-            content = _grep_file(d["path"], rf"def {fn_name}", context=15) or content
+            content = grep_file(d["path"], rf"def {fn_name}", context=15) or content
         label = d["path"]
     elif "code" in d:
         content = d["code"][:3000]
@@ -597,14 +423,14 @@ def gen_tests():
                  system="Output only the test code. Use pytest. No fences.\n",
                  max_tokens=600, mode="code")
     console.print(Panel(result[:800], title="[yellow]tests[/yellow]", border_style="yellow"))
-    _count_saved(len(content))
+    count_saved(len(content))
     return jsonify({"tests": result, "source": label})
 
 @app.route("/review", methods=["POST"])
 def review():
     d = request.json or {}
     if "path" in d:
-        content = _read(d["path"], limit=3000)
+        content = read_file(d["path"], limit=3000)
         label = d["path"]
         if content.startswith("File not found"):
             return jsonify({"error": content}), 404
@@ -618,7 +444,7 @@ def review():
     result = llm(f"Review this code:\n\n{content}",
                  system="Format: BUGS: (list or 'none'), IMPROVEMENTS: (top 2-3), VERDICT: (one line). No fences.\n",
                  max_tokens=350)
-    _count_saved(len(content))
+    count_saved(len(content))
     console.print(Panel(result[:600], title="[magenta]review[/magenta]", border_style="magenta"))
     return jsonify({"review": result, "source": label})
 
@@ -629,51 +455,61 @@ def git_summary():
     n = int(d.get("n", 10))
     ts = datetime.now().strftime("%H:%M:%S")
     console.print(Rule(f"[cyan]git_summary  {ts}[/cyan]"))
-    log_raw = _shell(f"git -C {repo_path} log --oneline --stat -{n} 2>&1")
+    log_raw = run_shell(f"git -C {repo_path} log --oneline --stat -{n} 2>&1")
     if "not a git repository" in log_raw.lower():
         return jsonify({"error": f"Not a git repo: {repo_path}"}), 400
     result = llm(f"Summarize these recent git commits in plain English:\n\n{log_raw}",
                  system="2-4 bullet points. Focus on WHAT changed and WHY. No fences.\n",
                  max_tokens=250)
-    _count_saved(len(log_raw))
+    count_saved(len(log_raw))
     console.print(Panel(result, title="[cyan]git summary[/cyan]", border_style="cyan"))
     return jsonify({"summary": result, "commits_analyzed": n})
 
 @app.route("/batch", methods=["POST"])
 def batch():
     d = request.json or {}
+    if not _check_auth(d): return _auth_fail()
     tasks = d.get("tasks", [])
     if not tasks: return jsonify({"error": "tasks required"}), 400
+
+    # Review item #8: cap LLM tasks in batch, serialize to avoid flooding Ollama
+    ask_tasks = [t for t in tasks if t.get("type") == "ask"]
+    if len(ask_tasks) > 3:
+        return jsonify({"error": f"batch LLM tasks capped at 3, got {len(ask_tasks)}"}), 400
+
     results = []
     for t in tasks:
         typ = t.get("type", "ask")
         try:
             if typ == "run":
-                results.append({"type": "run", "result": _shell(t.get("cmd",""))})
+                results.append({"type": "run", "result": run_shell(t.get("cmd",""))})
             elif typ == "read":
-                results.append({"type": "read", "result": _read(t.get("path",""))})
+                results.append({"type": "read", "result": read_file(t.get("path",""))})
             elif typ == "grep":
-                results.append({"type": "grep", "result": _grep_file(
+                results.append({"type": "grep", "result": grep_file(
                     t.get("path",""), t.get("pattern",""), t.get("context",2))})
             elif typ == "outline":
-                results.append({"type": "outline", "result": _outline(t.get("path",""))})
+                results.append({"type": "outline", "result": outline_file(t.get("path",""))})
             elif typ == "tree":
-                results.append({"type": "tree", "result": _tree(
+                results.append({"type": "tree", "result": tree_view(
                     t.get("path","~/Desktop"), t.get("depth",2))})
             elif typ == "exists":
                 p = Path(os.path.expanduser(t.get("path","")))
                 results.append({"type": "exists", "result": p.exists()})
             elif typ == "write":
-                results.append({"type": "write", "result": _write_file(
+                results.append({"type": "write", "result": write_to_file(
                     t.get("path",""), t.get("content",""))})
             else:
-                results.append({"type": "ask", "result": run_task(t.get("task",""), "batch")})
+                results.append({"type": "ask",
+                    "result": run_task(t.get("task",""), "batch",
+                                       explicit_type=t.get("explicit_type",""))})
         except Exception as e:
             results.append({"type": typ, "error": str(e)})
     return jsonify({"results": results})
 
 @app.route("/memory/clear", methods=["POST"])
 def memory_clear():
+    if not _check_auth(request.json or {}): return _auth_fail()
     mem.clear()
     return jsonify({"cleared": True, "notes": mem.notes})
 
@@ -692,8 +528,9 @@ if __name__ == "__main__":
     import logging
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
+    # Review item #12: threaded=True is deprecated in Flask 2.3+, removed.
     threading.Thread(
-        target=lambda: app.run(host="0.0.0.0", port=7860, threaded=True),
+        target=lambda: app.run(host="0.0.0.0", port=7860),
         daemon=True
     ).start()
 
@@ -708,13 +545,15 @@ if __name__ == "__main__":
             pass
     threading.Thread(target=_warmup, daemon=True).start()
 
+    auth_note = "[yellow]AUTH enabled[/yellow]" if AUTH_TOKEN else "no auth"
     console.print(Panel(
-        "[bold cyan]Miser v1.0[/bold cyan]  ·  Claude Code's local co-processor\n\n"
+        "[bold cyan]Miser v1.1[/bold cyan]  ·  Claude Code's local co-processor\n\n"
         "[bold]Zero-LLM endpoints (<50ms):[/bold]\n"
         "  [green]/run /read /grep /outline /tree /exists /write /patch[/green]\n\n"
         "[bold]Local-LLM endpoints (0 API tokens):[/bold]\n"
         "  [cyan]/ask /summarize /codegen /explain /fix /test /review /git_summary /batch[/cyan]\n\n"
         f"[bold]Model:[/bold]  {MODEL}  (family: {adapter.family})\n"
+        f"[bold]Auth:[/bold]   {auth_note}\n"
         f"[bold]Memory:[/bold] {len(mem.notes)} notes · {len(mem.history)} past tasks\n"
         "[dim]http://localhost:7860[/dim]",
         border_style="cyan", title="[bold]Ready[/bold]"

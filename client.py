@@ -76,7 +76,7 @@ def _check_llm(result, op: str, context: str = ""):
         ctx_words = set(w.lower() for w in context.split() if len(w) > 4)
         result_words = set(result.lower().split())
         overlap = ctx_words & result_words
-        if ctx_words and len(overlap) / len(ctx_words) < 0.05:
+        if ctx_words and len(overlap) / len(ctx_words) < 0.15:
             return _flag(result, "CONTEXT_MISMATCH")
 
     return result
