@@ -371,113 +371,194 @@ Flask 开发服务器没有 SIGTERM/SIGINT 处理器。进程被 kill 时排队�
 
 ---
 
-## 四、下一阶段修改路径
+## 四、v1.3.1 验收总结
 
-按紧迫程度和依赖关系分为三期。每期独立可交付。
+v1.3.1 交付后，上轮第一期（工程健壮性）8 项中 7 项完成：
 
-### 第一期：工程健壮性（1-2 天）——达到"生产可用"
+| # | 事项 | 状态 |
+|---|------|------|
+| 1 | 修复 task_id | ✅ `uuid4()[:8]` |
+| 2 | 结构化日志 | ✅ `MISER_LOG_FORMAT=json` + `JsonFormatter` |
+| 3 | 优雅关闭 | ✅ SIGTERM/SIGINT → 排空队列 → 退出 |
+| 4 | 统一队列接入 | ✅ `/ask` `/chat` `/codegen` 全部返回 202 |
+| 5 | Docker | ✅ Dockerfile + docker-compose（Ollama sidecar + healthcheck） |
+| 6 | 集成测试 | ✅ 14 个 Flask test client 用例（8 端点 + health/batch/memory） |
+| 7 | 覆盖率 badge | ❌ 唯一未完成项 |
+| 8 | 输入大小限制 | ✅ `MAX_CONTENT_LENGTH=5MB` |
 
-这些是 v1.3 遗留的短板，修完后 miser 可以在服务器上稳定跑。
-
-| # | 事项 | 优先级 | 工作量 | 说明 |
-|---|------|--------|--------|------|
-| 1 | 修复 `task_id` | P0 | 5min | `str(uuid.uuid4())[:8]` |
-| 2 | 结构化日志 | P0 | 1h | JSON 格式，按 `--log-format` 切换 |
-| 3 | 优雅关闭 | P0 | 1h | SIGTERM → 排空队列 → 写日志 → 退出 |
-| 4 | 统一队列接入 | P0 | 0.5h | `/chat`、`/codegen` 也走队列 |
-| 5 | Docker 镜像 | P1 | 1h | `Dockerfile` + `docker-compose.yml`（含 Ollama sidecar） |
-| 6 | 集成测试 | P1 | 3h | Flask test client，覆盖 8 个核心端点 |
-| 7 | 覆盖率 badge | P1 | 0.5h | CI 接入 codecov.io |
-| 8 | 输入大小限制 | P1 | 0.5h | `MAX_REQUEST_BODY = 5MB`，防 OOM |
-
-**第一期交付标准：** 所有端点行为一致（全走队列）、日志可被外部系统解析、Docker 一键启动、集成测试覆盖核心路径。
-
-### 第二期：安全与 API 治理（3-5 天）——达到"可信赖的服务"
-
-在工程健壮性的基础上，加上安全边界和 API 规范。
-
-| # | 事项 | 优先级 | 工作量 | 说明 |
-|---|------|--------|--------|------|
-| 9 | rate limiting | P0 | 2h | Flask-Limiter，per-endpoint 配额 |
-| 10 | API key hashing | P0 | 1h | `MISER_AUTH_TOKEN` 改为 SHA256 hash 比对 |
-| 11 | CORS 白名单 | P0 | 0.5h | `flask-cors`，仅允许 localhost |
-| 12 | API 版本化 | P0 | 2h | `/v1/read`、`/v1/ask` 等，旧路由保留 3 个月 |
-| 13 | OpenAPI 文档 | P1 | 3h | 自动生成 `/v1/openapi.json` |
-| 14 | config.py 集中配置 | P1 | 2h | 环境变量 + 默认值 + 校验统一入口 |
-| 15 | 安全扫描 CI | P1 | 1h | bandit + safety 加入 GitHub Actions |
-| 16 | 错误码标准化 | P1 | 1h | 统一 `{"error": {"code": "...", "message": "..."}}` 格式 |
-
-**第二期交付标准：** API 有版本号、有 OpenAPI spec、有 rate limit、auth token 不裸存。第三方可以安全地依赖 Miser API。
-
-### 第三期：架构演进（1-2 周）——达到"可扩展的平台"
-
-在前两期基础上进行架构重构，为多用户和规模化做准备。
-
-| # | 事项 | 优先级 | 工作量 | 说明 |
-|---|------|--------|--------|------|
-| 17 | 拆分 miser.py 路由 | P0 | 4h | `routes/` 目录，按 Zero-LLM / Local-LLM / Admin 分组 |
-| 18 | 多 worker 进程 | P0 | 2h | gunicorn + 共享队列（Redis 或 SQLite） |
-| 19 | JS/TS SDK | P1 | 3h | `npm install miser-client`，对标 client.py |
-| 20 | 断路器（Ollama） | P1 | 2h | Ollama 连续失败 5 次 → 熔断 60s → 半开探测 |
-| 21 | 缓存层 | P1 | 3h | same path + same params → 返回缓存结果（TTL 30s） |
-| 22 | Prometheus metrics | P2 | 3h | `/metrics` 端点，token_saved、request_duration、queue_depth |
-| 23 | pre-commit hooks | P2 | 1h | ruff format + lint + bandit |
-| 24 | 断路器 | P1 | 2h | Ollama 连续失败 5 次 → 熔断 60s → 半开探测 |
-
-**第三期交付标准：** 路由拆分完成、多 worker 可水平扩展、第三方语言 SDK 可用、Ollama 故障不拖垮整个服务。
+**当前测试规模:** 57 条（43 unit + 14 integration），测试文件 5 个，CI 矩阵 Python 3.10-3.13。
 
 ---
 
-## 五、不做的事（明确排除）
+## 五、下一阶段：商业化 + 封装（合并路线图）
 
-这些是上轮评估提到的项，但当前阶段**不做**——原因写在下面：
+v1.3.1 工程基底已经牢固。下阶段同时推进两条线——**安全与 API 治理**（让产品可信赖）+ **封装与分发**（让用户能下载就用）。两线并行，按依赖关系分为三期。
+
+### 第一期：安全底线 + CLI 封装（3-4 天）— 达到"可公开分发"
+
+两线并行：安全侧补齐生产级底线，封装侧做出第一个可双击运行的安装包。
+
+| # | 线 | 事项 | 优先级 | 工作量 | 说明 |
+|---|----|------|--------|--------|------|
+| 1 | 安全 | rate limiting | P0 | 2h | Flask-Limiter，`/ask` 30/min、Zero-LLM 200/min |
+| 2 | 安全 | API key hashing | P0 | 1h | `MISER_AUTH_TOKEN` 改为 SHA256 hash 存储和比对 |
+| 3 | 安全 | CORS 白名单 | P0 | 0.5h | `flask-cors`，仅允许 `localhost` / `127.0.0.1` |
+| 4 | 安全 | 安全扫描 CI | P0 | 1h | bandit + safety 加入 GitHub Actions |
+| 5 | 安全 | error code 标准化 | P1 | 1h | 统一 `{"error": {"code": "E_xxx", "message": "..."}}` |
+| 6 | 封装 | PyInstaller 打包 | P0 | 2h | `miser.spec`，打出单文件 exe/app |
+| 7 | 封装 | 首次运行向导 | P0 | 2h | 检测 Ollama → 引导安装 → 自动 pull 模型 → 启动服务 |
+| 8 | 封装 | CLI 参数 | P0 | 1h | `--port` / `--model` / `--log-format` / `--auth-token` 替代纯环境变量 |
+| 9 | 封装 | 版本自检 | P1 | 0.5h | `miser --version` + 启动时检查 PyPI 最新版本 |
+
+**第一期交付物:**
+- 安全：rate limit 启用、auth token 哈希化、CORS 锁定、安全扫描跑在 CI 上
+- 封装：`miser.exe` (20MB) / `Miser.app` (25MB) 可双击启动，首次运行自动引导
+
+### 第二期：API 治理 + Tauri 托盘 App（4-6 天）— 达到"可商业分发"
+
+安全侧进行 API 规范化和版本控制，封装侧从 CLI 升级到带托盘的桌面 App。
+
+| # | 线 | 事项 | 优先级 | 工作量 | 说明 |
+|---|----|------|--------|--------|------|
+| 10 | API | API 版本化 | P0 | 2h | `/v1/read` `/v1/ask` 等，旧路由标记 deprecated 保留 |
+| 11 | API | OpenAPI 文档 | P0 | 3h | `/v1/openapi.json` + Swagger UI 页面 |
+| 12 | API | config.py 集中配置 | P0 | 2h | 环境变量 + CLI 参数 + 默认值统一加载和校验 |
+| 13 | API | 响应格式标准化 | P1 | 1h | 所有端点统一 `{"data": ..., "meta": {"tokens_saved_est": N}}` |
+| 14 | API | 覆盖率 badge | P1 | 0.5h | CI 接入 codecov.io |
+| 15 | 封装 | Tauri 托盘壳 | P0 | 4h | 系统托盘 + 状态指示（绿/黄/红）+ 菜单 |
+| 16 | 封装 | macOS 签名 + 公证 | P1 | 2h | Apple Developer 签名，消除 Gatekeeper 警告 |
+| 17 | 封装 | Windows 签名 | P1 | 1h | 代码签名证书，消除 SmartScreen 警告 |
+| 18 | 封装 | 自动更新 | P1 | 2h | 检测 GitHub Release 新版本 → 一键升级 |
+
+**第二期交付物:**
+- API：版本化端点 + OpenAPI spec + 统一响应格式，第三方可放心依赖
+- 封装：Tauri 托盘 App，大小 ~30MB，macOS/Windows/Linux 三平台，支持签名分发
+
+### 第三期：架构演进 + VS Code 插件（1-2 周）— 达到"平台级产品"
+
+架构侧完成拆分和多 worker 以支持未来扩展，封装侧覆盖 VS Code 生态触达最大用户群。
+
+| # | 线 | 事项 | 优先级 | 工作量 | 说明 |
+|---|----|------|--------|--------|------|
+| 19 | 架构 | 拆分 miser.py 路由 | P0 | 4h | `routes/zero.py` `routes/llm.py` `routes/admin.py` |
+| 20 | 架构 | 多 worker 进程 | P0 | 2h | gunicorn/uvicorn + 共享队列（SQLite），突破单并发瓶颈 |
+| 21 | 架构 | 断路器（Ollama） | P0 | 2h | 连续失败 5 次 → 熔断 60s → 半开探测 → 自动恢复 |
+| 22 | 架构 | 响应缓存 | P1 | 2h | same path+params → 缓存结果（TTL 30s），Zero-LLM 命中率最高 |
+| 23 | 架构 | Prometheus metrics | P2 | 2h | `/metrics`：`miser_tokens_saved` `miser_request_duration_ms` `miser_queue_depth` |
+| 24 | 架构 | pre-commit hooks | P2 | 0.5h | ruff format + lint + bandit |
+| 25 | 插件 | VS Code 插件 | P0 | 5h | `ext install miser`，侧边栏显示状态，一键启动/停止，用量统计 |
+| 26 | 插件 | 插件配置页 | P1 | 2h | Ollama endpoint / model / port 设置，首次启动向导 |
+| 27 | SDK | JS/TS SDK | P1 | 3h | `npm install miser-client`，对标 `client.py` 的 W API |
+
+**第三期交付物:**
+- 架构：路由拆分 + 多 worker + 断路器 + 缓存，可水平扩展
+- 插件：VS Code 插件上线 Marketplace，安装量最大的分发渠道
+- SDK：JS/TS 客户端，前端项目也能直接调 Miser
+
+---
+
+## 六、封装方案详解
+
+### 三层封装策略
+
+```
+Layer 1: PyInstaller (v1.4)          ← 第一期
+  └─ 单文件 .exe / .app
+  └─ 内嵌 Python 3.12 + 所有依赖
+  └─ 大小: ~20MB
+  └─ 目标: 不需要装 Python 就能跑
+
+Layer 2: Tauri Tray (v2.0)           ← 第二期
+  └─ 系统托盘 + 菜单
+  └─ 首次运行向导（检测 Ollama → 拉模型 → 启动）
+  └─ 大小: ~30MB（Tauri ~3MB + PyInstaller ~25MB）
+  └─ 目标: 普通开发者双击即用
+
+Layer 3: VS Code Extension (v2.1)    ← 第三期
+  └─ 侧边栏状态面板
+  └─ 一键启动/停止
+  └─ 用量统计（今日/本周/总计 token 节省）
+  └─ 大小: ~2MB（纯 JS）
+  └─ 目标: 覆盖所有 VS Code 用户
+```
+
+### 用户安装流程对比
+
+```
+现在:
+  1. git clone https://github.com/guyu-adam/miser
+  2. cd miser
+  3. pip install flask requests rich
+  4. 装 Ollama (去 ollama.com 下载)
+  5. ollama pull qwen3.5:4b
+  6. python miser.py
+  7. 终端不能关
+  → 门槛：需要 git、Python、pip、终端操作
+
+v2.0 Tauri App:
+  1. 下载 Miser.dmg (30MB)
+  2. 双击安装，拖到 Applications
+  3. 首次启动 → 弹出向导："需要 Ollama，点此安装" / "已安装 ✓"
+  4. 自动 ollama pull → 进度条
+  5. 完成 → 托盘图标变绿 → 可以使用了
+  → 门槛：零。下载→双击→完事
+```
+
+---
+
+## 七、不做的事（明确排除）
 
 | 事项 | 排除原因 |
 |------|---------|
-| 多用户隔离 | miser 是个人本地工具，多用户场景只有 SaaS 部署才有。SaaS 化之后再考虑 |
-| billing 集成 | 没有 SaaS 产品就没有 billing。先开源，后商业化 |
-| SSO/OAuth | 本地 localhost 服务不需要企业 SSO |
-| SOC2/GDPR 合规包 | 没有托管服务就不涉及用户数据 |
-| 多区域部署 | 本地服务不存在多区域问题 |
-| 白标/OEM | 产品尚未验证，过早白标无意义 |
-| GUI/Dashboard | token 节省数据太小（$3/月），不值得做 UI；JSON API + CLI 足够 |
-| K8s 部署 | 单机本地工具，K8s 过度设计 |
+| 多用户隔离 | 本地个人工具，SaaS 化之后再考虑 |
+| billing / 付费系统 | 先积累用户，有需求再定价 |
+| SSO / OAuth / LDAP | 本地 localhost 不需要企业认证 |
+| SOC2 / GDPR 合规 | 无托管服务 = 不涉及用户数据处理 |
+| 多区域部署 | 本地单机不存在多区域问题 |
+| 白标 / OEM | 产品未验证，过早无意义 |
+| K8s / Helm | 单机工具不需要容器编排 |
+| GUI Dashboard | token 金额太小（$3/月），Web UI 的成本比省的钱还多 |
 
 ---
 
-## 六、路线图时间线
+## 八、路线图时间线
 
 ```
-Week 1 ──── 第一期（工程健壮性）
-              task_id fix · 结构化日志 · 优雅关闭 · 队列统一 · Docker · 集成测试 · 覆盖率
-              交付: v1.4 — "生产可用"
+Week 1 ──── 第一期（安全 + CLI 封装）
+              rate limit · API key hash · CORS · 安全扫描 · PyInstaller · 首次运行向导 · CLI
+              交付: v1.4 + miser.exe / Miser.app
+                     "可公开分发的可信赖服务"
 
-Week 2-3 ── 第二期（安全与 API 治理）
-              rate limit · API key hash · CORS · API 版本化 · OpenAPI · config.py · 安全扫描
-              交付: v2.0 — "可信赖的服务"
+Week 2-3 ── 第二期（API 治理 + Tauri 托盘）
+              API 版本化 · OpenAPI · config.py · 响应标准化 · Tauri 壳 · 代码签名 · 自动更新
+              交付: v2.0 + Tauri 三平台安装包
+                     "普通开发者下载即用的产品"
 
-Week 3-4 ── 第三期（架构演进）
-              路由拆分 · 多 worker · JS SDK · 断路器 · 缓存 · Prometheus
-              交付: v2.1 — "可扩展的平台"
+Week 3-4 ── 第三期（架构演进 + VS Code）
+              路由拆分 · 多 worker · 断路器 · 缓存 · VS Code 插件 · JS SDK · Prometheus
+              交付: v2.1 + VS Code 插件
+                     "覆盖 VS Code 生态的平台级产品"
 
-Beyond ──── 等待外部信号
-              ├─ 开源社区反馈 → 调整优先级
-              ├─ Anthropic token 定价变化 → 重新评估价值主张
-              └─ 有付费用户需求 → 启动多用户/billing/SaaS 开发
+Beyond ──── 等待市场信号
+              ├─ VS Code 插件安装量 > 1000 → 验证 PMF
+              ├─ GitHub Stars > 500 → 启动社区运营
+              ├─ 有用户问"怎么付费" → 设计定价模型
+              └─ Anthropic 推出官方本地 offload → pivot 为质控中间件
 ```
 
 ---
 
-## 七、更新后的总评分
+## 九、更新后总评分（含封装维度）
 
-| 维度 | v1.3 | 目标 v2.1 |
-|------|------|-----------|
+| 维度 | v1.3.1 | 目标 v2.1 |
+|------|--------|-----------|
 | 产品/价值主张 | ★★★★☆ | ★★★★☆ |
 | 安全 | ★★★☆☆ | ★★★★☆ |
-| 可靠性/容错 | ★★★★☆ | ★★★★★ |
+| 可靠性/容错 | ★★★★★ | ★★★★★ |
 | 性能 | ★★★★☆ | ★★★★★ |
-| 分发/部署 | ★★★☆☆ | ★★★★☆ |
-| 测试 | ★★★★☆ | ★★★★★ |
+| 分发/部署 | ★★★☆☆ | ★★★★★ |
+| 封装/用户体验 | ★☆☆☆☆ | ★★★★★ |
+| 测试 | ★★★★★ | ★★★★★ |
 | 监控/可观测 | ★★★★☆ | ★★★★★ |
 | API 设计 | ★★★☆☆ | ★★★★★ |
 | 文档 | ★★★★★ | ★★★★★ |
@@ -486,4 +567,4 @@ Beyond ──── 等待外部信号
 | 竞争格局 | ★★★★☆ | ★★★★☆ |
 | **综合** | **★★★★☆** | **★★★★★** |
 
-**一句话：v1.3 从"个人工具"升级到了"可信赖的开源项目"。三期修改路径做完后（v2.1），Miser 就是一个"随时可以接 billing 的商业化底座"。剩下的路取决于外部信号——有没有用户、token 价格会不会跌、Anthropic 做不做本地 offload。**
+**一句话：v1.3.1 工程基底稳固。三步走完后，Miser 从"需要 git clone 的黑客工具"变成"下载即用的桌面产品"——安装包 30MB，双击启动，首次自动配置，托盘静默运行。这才是商业化的真正起点：不是代码有多好，是用户有没有理由不用你。**
