@@ -1,0 +1,14 @@
+{
+  "_comment": "Open Interpreter profile — use Miser as local backend. Copy to ~/.open-interpreter/profiles/miser.yaml or use: interpreter --profile miser",
+  "llm": {
+    "model": "openai/miser-local",
+    "api_base": "http://localhost:7860/v1",
+    "api_key": "local",
+    "max_tokens": 600,
+    "temperature": 0.2
+  },
+  "computer": {
+    "offline": true,
+    "confirm_code": false
+  }
+}

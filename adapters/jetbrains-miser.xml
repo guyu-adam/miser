@@ -1,0 +1,12 @@
+<!-- JetBrains AI Assistant custom provider configuration.
+     Place in: ~/.config/JetBrains/<IDE>/options/ai-assistant.xml
+     Or configure via: Settings → AI Assistant → Custom Provider -->
+<application>
+  <component name="AIAssistantSettings">
+    <option name="customProviderEnabled" value="true" />
+    <option name="customProviderUrl" value="http://localhost:7860/v1/chat/completions" />
+    <option name="customProviderApiKey" value="local" />
+    <option name="customProviderModel" value="qwen3.5:4b" />
+    <option name="customProviderName" value="Miser Local" />
+  </component>
+</application>

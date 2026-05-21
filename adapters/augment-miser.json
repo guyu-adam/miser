@@ -1,0 +1,20 @@
+{
+  "_comment": "Augment Code integration. Add custom backend in Augment settings.",
+  "backends": {
+    "miser": {
+      "endpoint": "http://localhost:7860/v1/chat/completions",
+      "api_key": "local",
+      "model": "qwen3.5:4b",
+      "capabilities": ["chat", "completion", "explain"],
+      "description": "Miser — 100% local inference, zero cloud token cost"
+    }
+  },
+  "tools": {
+    "miser-read": {
+      "endpoint": "http://localhost:7860/v1/read",
+      "method": "POST",
+      "body_template": "{\"path\": \"$FILE_PATH\"}",
+      "description": "Read file locally (zero tokens)"
+    }
+  }
+}

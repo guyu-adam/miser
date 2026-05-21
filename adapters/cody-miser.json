@@ -1,0 +1,20 @@
+{
+  "_comment": "Sourcegraph Cody integration. Add to VS Code settings.json or .cody/agent.json.",
+  "cody.agent.mcpServers": {
+    "miser": {
+      "command": "python3",
+      "args": ["miser.py"],
+      "cwd": "/path/to/miser"
+    }
+  },
+  "cody.customCommands": {
+    "miser-outline": {
+      "prompt": "Run: curl -s -X POST http://localhost:7860/v1/outline -H 'Content-Type: application/json' -d '{\"path\":\"$file\"}'",
+      "description": "Miser: extract file structure (zero tokens)"
+    },
+    "miser-explain": {
+      "prompt": "Run: curl -s -X POST http://localhost:7860/v1/chat/completions -H 'Content-Type: application/json' -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Explain this code\"}]}'",
+      "description": "Miser: explain with local LLM ($0 API)"
+    }
+  }
+}

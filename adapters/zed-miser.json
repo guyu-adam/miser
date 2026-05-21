@@ -1,0 +1,22 @@
+{
+  "_comment": "Zed AI integration. Add to ~/.config/zed/settings.json under 'assistant'.",
+  "assistant": {
+    "provider": {
+      "name": "miser",
+      "type": "openai-compatible",
+      "api_url": "http://localhost:7860/v1/chat/completions",
+      "available_models": [
+        {
+          "name": "qwen3.5:4b",
+          "display_name": "Miser Local (Qwen 3.5 4B)",
+          "max_tokens": 600
+        },
+        {
+          "name": "mistral:7b",
+          "display_name": "Miser Local (Mistral 7B)",
+          "max_tokens": 800
+        }
+      ]
+    }
+  }
+}

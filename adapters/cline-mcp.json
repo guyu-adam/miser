@@ -1,0 +1,14 @@
+{
+  "_comment": "Cline MCP integration. Copy into Cline MCP settings (~/.vscode/mcp.json or VS Code settings).",
+  "mcpServers": {
+    "miser": {
+      "command": "python3",
+      "args": ["-m", "miser"],
+      "env": {
+        "MISER_PORT": "7860",
+        "MISER_MODEL": "qwen3.5:4b"
+      },
+      "description": "Miser — local co-processor. File ops (outline/grep/tree) use zero tokens. Code gen/explain/fix use local GPU ($0 API cost)."
+    }
+  }
+}

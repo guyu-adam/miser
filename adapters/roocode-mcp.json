@@ -1,0 +1,25 @@
+{
+  "_comment": "Roo Code MCP integration. Add to .roo/mcp.json or VS Code settings.",
+  "mcpServers": {
+    "miser-read": {
+      "command": "curl",
+      "args": ["-s", "-X", "POST", "http://localhost:7860/v1/read", "-H", "Content-Type: application/json", "-d"],
+      "description": "Read files locally (zero API tokens)"
+    },
+    "miser-outline": {
+      "command": "curl",
+      "args": ["-s", "-X", "POST", "http://localhost:7860/v1/outline", "-H", "Content-Type: application/json", "-d"],
+      "description": "Extract function/class outline (zero tokens)"
+    },
+    "miser-grep": {
+      "command": "curl",
+      "args": ["-s", "-X", "POST", "http://localhost:7860/v1/grep", "-H", "Content-Type: application/json", "-d"],
+      "description": "Search files with regex (zero tokens)"
+    },
+    "miser-explain": {
+      "command": "curl",
+      "args": ["-s", "-X", "POST", "http://localhost:7860/v1/chat/completions", "-H", "Content-Type: application/json", "-d"],
+      "description": "Explain code with local LLM (zero API tokens)"
+    }
+  }
+}

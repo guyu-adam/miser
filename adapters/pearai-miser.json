@@ -1,0 +1,13 @@
+{
+  "_comment": "PearAI integration. Add as custom provider in PearAI settings.",
+  "providers": {
+    "miser-local": {
+      "type": "openai-compatible",
+      "baseUrl": "http://localhost:7860/v1",
+      "apiKey": "local",
+      "models": ["qwen3.5:4b", "mistral:7b", "llama3.1:8b"],
+      "defaultModel": "qwen3.5:4b",
+      "description": "Miser — 100% local, zero API cost. File ops <50ms, LLM ops run on your GPU."
+    }
+  }
+}
