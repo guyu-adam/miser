@@ -1,0 +1,26 @@
+{
+  "_comment": "Continue.dev Miser integration (Agent adaptation #9). Copy into ~/.continue/config.json",
+  "models": [
+    {
+      "title": "Miser Local — qwen3.5:4b",
+      "provider": "openai",
+      "apiBase": "http://localhost:7860/v1",
+      "apiKey": "local",
+      "model": "qwen3.5:4b"
+    },
+    {
+      "title": "Miser Local — mistral:7b",
+      "provider": "openai",
+      "apiBase": "http://localhost:7860/v1",
+      "apiKey": "local",
+      "model": "mistral:7b"
+    }
+  ],
+  "tabAutocompleteModel": {
+    "title": "Miser Autocomplete",
+    "provider": "openai",
+    "apiBase": "http://localhost:7860/v1",
+    "apiKey": "local",
+    "model": "qwen3.5:4b"
+  }
+}

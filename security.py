@@ -117,14 +117,16 @@ ERROR_CODES = {
 
 
 def error_response(code: str, detail: str = "", status: int | None = None) -> tuple:
-    """Build a standardized error response."""
+    """Build a standardized error response (safe without app context)."""
+    import json as _json
+    from flask import Response
     info = ERROR_CODES.get(code, (500, "Unknown error"))
     http_status = status if status is not None else info[0]
-    body = {
+    body = _json.dumps({
         "error": {
             "code": code,
             "message": info[1],
             "detail": detail or info[1],
         }
-    }
-    return jsonify(body), http_status
+    })
+    return Response(body, status=http_status, mimetype="application/json")

@@ -1,0 +1,10 @@
+# aider-miser.yml — Miser integration for Aider (Agent adaptation #8)
+# Usage: aider --config aider-miser.yml
+
+# Replace file read/write with local Miser calls (zero API tokens)
+read-command: "python -c \"import sys; sys.path.insert(0, '.'); from client import W; print(W.read('$path') or '')\""
+edit-command: "python -c \"import sys; sys.path.insert(0, '.'); from client import W; W.write('$path', __import__('sys').stdin.read())\""
+
+# Use Miser's OpenAI facade for chat (optional — removes all API token usage)
+# openai-api-base: http://localhost:7860/v1
+# openai-api-key: local

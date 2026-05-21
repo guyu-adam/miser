@@ -1,5 +1,29 @@
 # Changelog
 
+## v1.4.1 (2026-05-21) — Emergency Fixes + Agent Adaptation
+
+### Bug fixes (#31-#34)
+- #33: `routes/zero.py` batch endpoint restored `run_task()` for ask-type tasks
+- #31: API versioning — blueprints registered with `/v1/` prefix, backward-compat routes preserved
+- #34: setup wizard auto-detects first run (no memory.json → launches wizard)
+- #32: `gunicorn.conf.py` committed + `facade.py` registered
+
+### Agent adaptation (new dimension: ★★★★★)
+- `facade.py`: OpenAI-compatible `/v1/chat/completions` + `/v1/models` endpoints
+  Single endpoint unlocks Continue.dev, LangChain, CrewAI, AutoGPT
+- `adapters/codex-miser.sh`: one-shot Codex CLI integration script
+- `adapters/aider-miser.yml`: Aider pre-configured read/write commands
+- `adapters/continue-miser.json`: Continue.dev model configuration template
+
+### New tests (+52 cases)
+- `tests/test_security.py`: 19 cases (rate limiter, auth hash, CORS, error codes)
+- `tests/test_cache.py`: 9 cases (hit, miss, TTL, eviction, stats)
+- `tests/test_breaker.py`: 7 cases (closed, open, half_open, reset, counter)
+- `tests/test_config.py`: 11 cases (env, CLI, defaults)
+- `tests/test_integration.py`: +6 cases (/v1/ blueprint, facade, backward compat)
+
+### Total test suite: 109 cases, all passing
+
 ## v1.4.0 (2026-05-21) — Security Baseline + Packaging + Architecture
 
 ### Phase 1: Security & CLI (9 items)

@@ -1,5 +1,5 @@
 """
-Miser v1.4 — Claude Code's local co-processor.
+Miser v1.4.1 — Claude Code's local co-processor.
 Two execution paths:
   1. Zero-LLM (<50ms): shell, file read/write/grep/tree/exists/outline/patch
   2. Local LLM (no API cost): summarize, codegen, explain, fix, test, review, git_summary
@@ -35,6 +35,7 @@ from security import (
 from config import resolve as resolve_config
 from cache import cache_stats
 from breaker import ollama_breaker
+from facade import set_facade_model
 
 console = Console()
 app = Flask(__name__)
@@ -55,6 +56,14 @@ import routes.admin as _admin
 _admin.MODEL = MODEL
 _admin.ADAPTER = adapter
 _admin.MEM = mem
+
+# Register blueprints at module level (test-safe)
+from routes.zero import zero as _zero_bp, set_run_task as _set_run
+from routes.admin import admin as _admin_bp
+app.register_blueprint(_zero_bp, url_prefix="/v1")
+app.register_blueprint(_admin_bp)
+from facade import facade as _facade_bp
+app.register_blueprint(_facade_bp, url_prefix="/v1")
 
 # ── state ───────────────────────────────────────────────────────────────────────
 
@@ -205,39 +214,6 @@ def run_task(task: str, sender: str, system: str = "", max_tokens: int = 600,
 
 def _auth_fail():
     return jsonify({"error": "unauthorized — MISER_AUTH_TOKEN required"}), 401
-
-@app.route("/health")
-def health():
-    """Health check endpoint (commercialization P0)."""
-    q = get_queue()
-    return jsonify({
-        "status": "ok",
-        "version": "1.3.1",
-        "model": MODEL,
-        "model_family": adapter.family,
-        "worker": st.status,
-        "queue_size": q.size,
-    })
-
-@app.route("/status")
-def status():
-    pref = prefetch_stats()
-    q = get_queue()
-    return jsonify({
-        "status":           st.status,
-        "task":             st.task,
-        "count":            st.count,
-        "last":             st.result,
-        "tokens_saved_est": get_tokens_saved(),
-        "model":            MODEL,
-        "model_family":     adapter.family,
-        "prefetch":         pref,
-        "queue":            q.stats,
-    })
-
-@app.route("/memory")
-def memory():
-    return jsonify({"notes": mem.notes, "history": mem.history[-10:]})
 
 @app.route("/ask", methods=["POST"])
 def ask():
@@ -616,12 +592,6 @@ def batch():
             results.append({"type": typ, "error": str(e)})
     return jsonify({"results": results})
 
-@app.route("/memory/clear", methods=["POST"])
-def memory_clear():
-    if not _check_auth(request.json or {}): return _auth_fail()
-    mem.clear()
-    return jsonify({"cleared": True, "notes": mem.notes})
-
 @app.route("/note", methods=["POST"])
 def note():
     d = request.json or {}
@@ -648,12 +618,19 @@ if __name__ == "__main__":
     # Version + wizard handling (Phase 1 #8, #9)
     cli = cli_cfg["_cli"]
     if cli.version:
-        print(f"Miser v1.4.0")
+        print(f"Miser v1.4.1.0")
         sys.exit(0)
     if cli.wizard:
         from setup_wizard import wizard as _wizard
         _wizard()
         sys.exit(0)
+
+    # #34 fix: auto-detect first run (no model configured + no memory.json)
+    _memory_file = Path(__file__).parent / "memory.json"
+    if not _memory_file.exists() and not cli.wizard:
+        _log.info("First run detected — launching setup wizard")
+        from setup_wizard import wizard as _wizard
+        _wizard()
 
     # Update admin + security with resolved values
     _admin.MODEL = MODEL
@@ -670,7 +647,7 @@ if __name__ == "__main__":
                 "level": record.levelname,
                 "message": record.getMessage(),
                 "module": record.name,
-                "version": "1.4.0",
+                "version": "1.4.1",
             }
             if record.exc_info and record.exc_info[0]:
                 import traceback
@@ -687,17 +664,15 @@ if __name__ == "__main__":
             h.setFormatter(fmt)
 
     _log.basicConfig(level=_log.INFO, handlers=handlers, force=True)
-    _log.info(f"Starting v1.4.0 port={PORT} model={MODEL} log={LOG_FORMAT}")
+    _log.info(f"Starting v1.4.1.0 port={PORT} model={MODEL} log={LOG_FORMAT}")
 
     # Register security middleware (Phase 1 #1, #3)
     app.before_request(rate_limit_middleware)
     app.after_request(cors_middleware)
 
-    # Register route blueprints (Phase 3 #19)
-    from routes.zero import zero as _zero_bp
-    from routes.admin import admin as _admin_bp
-    app.register_blueprint(_zero_bp)
-    app.register_blueprint(_admin_bp)
+    # Wire up cross-module callbacks (fix #33)
+    _set_run(run_task)
+    set_facade_model(MODEL, adapter)
 
     threading.Thread(
         target=lambda: app.run(host="0.0.0.0", port=PORT),
@@ -737,7 +712,7 @@ if __name__ == "__main__":
     auth_note = "[yellow]AUTH enabled[/yellow]" if AUTH_TOKEN else "no auth"
     log_note = "json" if LOG_FORMAT == "json" else "text"
     console.print(Panel(
-        "[bold cyan]Miser v1.4[/bold cyan]  ·  Claude Code's local co-processor\n\n"
+        "[bold cyan]Miser v1.4.1[/bold cyan]  ·  Claude Code's local co-processor\n\n"
         "[bold]Zero-LLM endpoints (<50ms):[/bold]\n"
         "  [green]/v1/read /v1/grep /v1/outline /v1/tree /v1/exists /v1/run /v1/write /v1/patch[/green]\n\n"
         "[bold]Local-LLM endpoints (0 API tokens):[/bold]\n"

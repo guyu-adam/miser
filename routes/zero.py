@@ -14,6 +14,13 @@ from cache import cached, cache_stats as _cache_stats
 
 zero = Blueprint("zero", __name__)
 
+# Set by miser.py at startup to avoid circular import
+_run_task = None
+
+def set_run_task(fn):
+    global _run_task
+    _run_task = fn
+
 
 @zero.route("/read", methods=["POST"])
 def read():
@@ -142,7 +149,15 @@ def batch():
             elif typ == "write":
                 results.append({"type": "write", "data": write_to_file(t.get("path", ""), t.get("content", ""))})
             else:
-                results.append({"type": "ask", "data": t.get("task", "")})
+                # #33 fix: restore LLM execution for ask-type batch tasks
+                if _run_task:
+                    result = _run_task(t.get("task", ""), "batch",
+                                       t.get("system", ""),
+                                       t.get("max_tokens", 600),
+                                       t.get("explicit_type", "ask"))
+                    results.append({"type": "ask", "data": result})
+                else:
+                    results.append({"type": "ask", "data": t.get("task", "")})
         except Exception as e:
             results.append({"type": typ, "error": str(e)})
     return jsonify({"data": {"results": results}})

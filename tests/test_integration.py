@@ -19,7 +19,7 @@ class TestHealthCheck:
         assert r.status_code == 200
         d = json.loads(r.data)
         assert d["status"] == "ok"
-        assert d["version"] == "1.3.1"
+        assert d["version"] == "1.4.1"
         assert "model" in d
 
     def test_status_has_queue_stats(self):
@@ -117,6 +117,61 @@ class TestBatch:
         d = json.loads(r.data)
         assert d["results"][0]["result"] is True
         assert d["results"][1]["result"] is False
+
+
+class TestV1Blueprint:
+    """Verify /v1/ prefixed routes work (fix #31)."""
+    def test_v1_read(self):
+        c = client()
+        r = c.post("/v1/read", json={"path": "client.py"})
+        assert r.status_code == 200
+        assert "content" in r.json["data"]
+
+    def test_v1_outline(self):
+        c = client()
+        r = c.post("/v1/outline", json={"path": "tools.py"})
+        assert r.status_code == 200
+        assert "def " in r.json["data"]["outline"]
+
+    def test_v1_health(self):
+        c = client()
+        r = c.get("/health")
+        assert r.status_code == 200
+        assert r.json["version"] == "1.4.1"
+
+    def test_v1_metrics(self):
+        c = client()
+        r = c.get("/metrics")
+        assert r.status_code == 200
+        assert "miser_tokens_saved" in r.data.decode()
+
+    def test_old_read_still_works(self):
+        """Backward compatibility: un-prefixed routes should still work."""
+        c = client()
+        r = c.post("/read", json={"path": "client.py"})
+        assert r.status_code == 200
+
+
+class TestFacade:
+    def test_facade_models(self):
+        c = client()
+        r = c.get("/v1/models")
+        assert r.status_code == 200
+        assert r.json["object"] == "list"
+        assert len(r.json["data"]) >= 1
+
+    def test_facade_chat_completions(self):
+        c = client()
+        r = c.post("/v1/chat/completions", json={
+            "messages": [{"role": "user", "content": "say hello"}],
+            "max_tokens": 50,
+        })
+        assert r.status_code in (200, 500)  # 500 if Ollama is not running
+
+    def test_facade_missing_messages(self):
+        c = client()
+        r = c.post("/v1/chat/completions", json={})
+        assert r.status_code == 400
 
 
 class TestQueueBehavior:

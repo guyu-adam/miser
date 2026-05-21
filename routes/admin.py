@@ -21,7 +21,7 @@ def health():
     q = get_queue()
     return jsonify({
         "status": "ok",
-        "version": "1.4.0",
+        "version": "1.4.1",
         "model": MODEL,
         "model_family": ADAPTER.family if ADAPTER else "?",
         "queue_size": q.size,
