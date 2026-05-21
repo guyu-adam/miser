@@ -261,3 +261,276 @@ v1.1 的 9 条建议中 6 条已修、2 条未修（#15 Windows 支持、#21 tok
 3. **重复 import** — `miser.py` line 572 的无效 `import logging`（一行删除）
 
 这三个加起来不到 10 行改动，修完后 v1.2 就是一个信得过的版本。
+
+---
+
+# 商业化基本需求评估
+
+**评估日期:** 2026-05-21
+**评估对象:** Miser v1.2（含最新 #15/#21-#25 修复）
+**评估方法:** 从产品、安全、可靠、性能、分发、测试、监控、API 设计、文档、代码质量、法务合规、竞争格局 12 个维度逐项审查全部 10 个 .py 模块。
+
+---
+
+## 一、总体结论
+
+**Miser 适合作为高质量开源项目发布，但距离可付费的商业产品还有 6-12 个月工程差距。**
+
+当前状态：**个人工具 / 社区可用** 级别。核心价值主张明确、Zero-LLM + Local-LLM 两层架构正确、关键安全边界已建立。但缺少商业产品必备的多用户支持、安全加固、监控告警、CI/CD 流水线和 SLA 保障。
+
+---
+
+## 二、12 维度逐项评估
+
+### 1. 产品 / 价值主张 — ★★★★☆
+
+| 强项 | 弱项 |
+|------|------|
+| "省 98% API token" 一句话说清价值 | 依赖用户已有 Ollama（安装门槛） |
+| Benchmark 有实测数据支撑（~$40/年节省） | 节省金额绝对值小（$3.4/月），个人用户吸引力有限 |
+| 兼容 Claude Code / Codex / Aider 多代理 | 没有可视化 dashboard 或用量报表 |
+| Zero-LLM ops 100% 确定性，零幻觉风险 | 价值依赖 Claude API 继续按 token 计费 |
+| condense / prefetch 功能是竞品没有的差异化 | 如果 Claude 原生支持本地缓存，产品价值归零 |
+
+**商业化风险：** Miser 本质上是一个"API token 套利"工具——它的价值来自 Claude API 的 token 定价与本地 Ollama 的零成本之间的差价。如果 Anthropic 降价或推出官方本地缓存，这套利空间消失。
+
+### 2. 安全 — ★★★☆☆
+
+| 已做 | 未做 |
+|------|------|
+| `_safe_eval()` AST 白名单，杜绝代码注入 | 无 HTTPS/TLS，所有流量明文（即使是 localhost） |
+| 危险 shell 模式拦截 (`rm -rf`, `curl \| bash`) | 无 rate limiting，可被 DoS 攻击 |
+| CRITICAL ops（auth/payment/deploy）永不 offload | `MISER_AUTH_TOKEN` 是静态明文，无 token rotation |
+| write/patch 端点要求 auth | 无 CORS 配置，其他 localhost 进程可跨域调用 |
+| 所有数据本地处理，不外传 | 无输入大小限制（超大文件可 OOM） |
+| | 无请求来源验证（任何本地进程可调用） |
+
+**商业化门槛：** 需要至少加上 rate limiting、request size limits、结构化 auth（API key with hashing）、CORS 白名单。如果是 SaaS 部署还需要 mutual TLS。
+
+### 3. 可靠性 / 容错 — ★★★☆☆
+
+| 已做 | 未做 |
+|------|------|
+| LLM 调用 3 次重试 | 单进程架构，crash 即服务全停 |
+| condenser 蒸馏失败→返回原文（安全降级） | 无 health check 端点 |
+| 线程安全：Lock 保护所有共享状态 | 单并发模型：`st.status == "WORKING"` 直接返回 429 |
+| adaptive.py 冷却机制：本地模型连续失败→自动退回 Claude | 无请求队列，满负荷时请求直接丢失 |
+| memory.py MAX_NOTES=200 上限控制 | 无优雅关闭（SIGTERM 处理） |
+| | 无断路器/熔断模式（Ollama 挂了之后持续重试） |
+| | 无持久化请求队列（重启丢任务） |
+
+**商业化门槛：** 至少需要 health check endpoint + 请求队列 + 优雅关闭。生产级需要多 worker 进程 + 断路器 + 自动重启。
+
+### 4. 性能 — ★★★★☆
+
+| 已做 | 未做 |
+|------|------|
+| Zero-LLM ops <50ms（实测 1-5ms） | condenser chunk 蒸馏是串行的（3 chunks = 3× LLM 调用） |
+| keep_alive=-1 模型常驻内存 | prefetch 是单线程后台，大文件预取可能阻塞 |
+| prefetch.py 预测性文件缓存 | 无缓存策略（相同的 read/outline 会重复执行） |
+| Markdown 响应清洗避免 meta-commentary 浪费 token | 无响应时间 SLA 监控 |
+
+**性能数据（实测）：**
+```
+Zero-LLM:  1-5ms   (read/outline/grep/tree)
+Local-LLM: 0.2s-10s (codegen/fix/explain/review/test)
+Token 节省: 70-98%  (取决于操作类型)
+```
+
+商业化场景下最大的性能问题是**单并发**——如果一个用户触发了 10s 的 test 生成，其他人的请求全部吃 429。
+
+### 5. 分发 / 部署 — ★★★☆☆
+
+| 已做 | 未做 |
+|------|------|
+| pip install -e . (pyproject.toml) | 无 Docker 镜像 |
+| Linux/macOS: install.sh + systemd/launchd | Windows: 无 auto-start，需手动保持终端 |
+| README 含三平台安装说明 | 无 Docker Compose / K8s 部署方案 |
+| | 无 deb/rpm/pkg 安装包 |
+| | 无 version.json 或自动更新机制 |
+| | install.sh 内 v1.0 版本号硬编码，已过时 |
+
+### 6. 测试 — ★★★★☆ (开源级别) / ★★☆☆☆ (商业级别)
+
+| 已做 | 未做 |
+|------|------|
+| 43 条 pytest case（tools/quality/adaptive） | 零集成测试（不启动 Flask server 测） |
+| conftest.py 统一 path setup | 零端到端测试（不通过 HTTP 调用验证） |
+| pyproject.toml pytest 配置 | 无 CI/CD (GitHub Actions) |
+| | 无覆盖率报告 |
+| | 测试依赖本地文件路径，非隔离 |
+| | 无性能回归测试 |
+| | 无安全扫描（bandit/safety） |
+
+**商业化门槛：** 至少需要 CI + 集成测试 + 覆盖率 >80%。
+
+### 7. 监控 / 可观测性 — ★★★☆☆
+
+| 已做 | 未做 |
+|------|------|
+| miser.log 文件 + 控制台双输出 | 无结构化日志（纯文本，无法解析） |
+| /status 端点含 tokens_saved、model、prefetch 统计 | 无 metrics 端点（Prometheus） |
+| /memory 端点可查看历史 | 无 tracing（OpenTelemetry） |
+| | 无告警机制 |
+| | 无 health check 端点 |
+| | 无错误追踪/聚合（Sentry） |
+
+### 8. API 设计 — ★★★☆☆
+
+| 已做 | 未做 |
+|------|------|
+| RESTful 风格（/read, /write, /ask...） | 无 API 版本号（/v1/read） |
+| Python SDK (client.py W class) | 无 OpenAPI / Swagger 文档 |
+| /batch 批量减少 round-trip | 响应格式不一致（有的返回 string，有的返回 dict） |
+| 清晰的操作分类（Zero-LLM / Local-LLM） | `/exists` 返回 dict，`/read` 返回 `{"content": str}` |
+| | 无分页（memory/history 可能无限增长） |
+| | 无 SDK for JS/TS（只有 Python） |
+| | 无向后兼容承诺 |
+
+### 9. 文档 — ★★★★☆
+
+| 已做 | 未做 |
+|------|------|
+| README 包含价值主张、Quick Start、完整 API、benchmark | 无 CHANGELOG |
+| CODE_REVIEW 详细记录每次审查结果 | 无贡献指南 (CONTRIBUTING.md) |
+| 中英双语 README | 无 API 参考文档（OpenAPI 或 ReadTheDocs） |
+| demo.cast 终端演示 | 无故障排查指南 |
+| install.sh 引导式安装 | MISER_FOR_CLAUDE.md 被引用但不存在于仓库 |
+
+### 10. 代码质量 — ★★★★☆
+
+| 已做 | 未做 |
+|------|------|
+| 10 个 .py 模块，职责清晰 | miser.py 622 行仍偏大（God module 问题） |
+| model_adapter.py 17 个模型家族支持 | 无 mypy/pyright 类型检查配置 |
+| quality.py + adaptive.py 双重路由保护 | 全局单例 (_router, _predictor, W) 难以单元测试 |
+| 线程安全（Lock 覆盖所有关键路径） | 无 ruff/flake8 lint 配置 |
+| | 无 pre-commit hooks |
+| | 函数级 docstring 不完整 |
+| | 类型标注不统一 |
+
+**技术债务量化：**
+- God module: miser.py (622 lines) — 建议拆分 route 注册到单独的 routes/ 目录
+- 全局单例：3 个 (_router, _predictor, W) — 建议用依赖注入或工厂模式
+- 配置分散：环境变量 + 硬编码默认值 — 建议集中到 config.py
+
+### 11. 法务 / 合规 — ★★★☆☆
+
+| 已做 | 未做 |
+|------|------|
+| MIT License | 无 Privacy Policy |
+| 所有依赖许可兼容 (Flask/requests/rich) | 无 Terms of Service |
+| 数据全部本地处理，不联网 | 无 CLA (Contributor License Agreement) |
+| | Ollama 模型自身有独立许可（qwen/Mistral/Llama 不同） |
+| | 如果 Miser 生成的代码有 bug 导致损失，免责声明缺失 |
+
+### 12. 竞争格局 — ★★★★☆
+
+| Miser 的优势 | Miser 的风险 |
+|-------------|-------------|
+| 不是 IDE 插件，而是 HTTP 服务——任何 agent 都能用 | continue.dev 有完整 IDE 集成 + 成熟的商业模式 |
+| Zero-LLM ops 100% 确定性（竞品多用 LLM 做所有事） | Cursor/Copilot 如果推出本地 offload，直接替代 |
+| condense 语义蒸馏是独特功能（竞品只有字符压缩） | 开源 LLM 质量快速提升，Miser 的"监督层"价值可能缩小 |
+| adaptive.py 自学习路由（竞品多靠静态配置） | TabbyML / llama.cpp 生态快速发展 |
+
+---
+
+## 三、商业化路线图建议
+
+### 阶段 1：开源打磨（1-2 个月）— 达到"可信赖的开源项目"
+
+| 优先级 | 事项 | 工作量 |
+|--------|------|--------|
+| P0 | 添加 health check 端点 | 0.5h |
+| P0 | 请求队列替代 429 拒绝（至少 3-5 个槽位） | 2h |
+| P0 | 结构化日志（JSON 格式） | 1h |
+| P0 | GitHub Actions CI（pytest on push） | 2h |
+| P0 | 修复 install.sh 版本号（v1.0 → v1.2） | 5min |
+| P1 | 添加 CHANGELOG.md | 1h |
+| P1 | OpenAPI/Swagger 文档 | 3h |
+| P1 | Docker 镜像 + Docker Compose | 3h |
+| P1 | 覆盖率报告（pytest-cov 已安装，只需 CI 配置） | 1h |
+| P2 | 集成测试（启动 Flask test client） | 4h |
+| P2 | rate limiting | 2h |
+| P2 | 拆分 miser.py 路由到 routes/ 目录 | 4h |
+
+### 阶段 2：商业化准备（3-6 个月）— 达到"可收费的 SaaS"
+
+| 优先级 | 事项 | 工作量 |
+|--------|------|--------|
+| P0 | 多用户隔离（per-user token counter, memory, adaptive profile） | 2-3 周 |
+| P0 | 正式 API 版本化（/v1/...） | 1 周 |
+| P0 | 用量计量 + billing 集成 | 2-3 周 |
+| P0 | API key 管理系统（创建/轮换/撤销） | 1 周 |
+| P1 | 多 worker 进程（gunicorn/uvicorn） | 1 周 |
+| P1 | Prometheus metrics + Grafana dashboard | 2 周 |
+| P1 | JS/TS SDK | 2 周 |
+| P1 | SLA 保证 + 状态页 | 1 周 |
+| P2 | SSO/OAuth 集成 | 2 周 |
+| P2 | 审计日志 | 1 周 |
+| P2 | 合规包（SOC2/GDPR checklist） | 持续 |
+
+### 阶段 3：规模化（6-12 个月）— 达到"可盈利的商业产品"
+
+| 事项 | 说明 |
+|------|------|
+| 多区域部署 | 降低延迟，数据本地化合规 |
+| 云端 LLM fallback | Ollama 不可用时自动切换到托管的 qwen/mistral API |
+| 团队协作功能 | 共享 memory、共享 adaptive 学习数据 |
+| 企业版定价 | per-seat licensing, on-prem deployment option |
+| 白标/OEM | 让 IDE 厂商集成 Miser 作为后端 |
+
+---
+
+## 四、商业模式可行性分析
+
+### 当前可行的模式
+
+1. **开源 + 托管服务（Open Core）**
+   - miser 核心 MIT 开源
+   - miser.cloud 提供托管版（无需用户装 Ollama、自动扩缩容、dashboard）
+   - 免费层：单用户、1000 次/月
+   - Pro 层：$5-10/月，无限使用、团队协作
+
+2. **企业版 License**
+   - 自部署版本，per-seat 年费
+   - 含 SSO、审计日志、SLA、优先支持
+   - 目标客户：使用 Claude Code 的企业团队
+
+### 关键商业问题（需要验证）
+
+1. **市场规模有多大？** — Claude Code 的 DAU × 愿意装 Ollama 的比例 × 愿意付费的比例。这个漏斗可能很窄。
+2. **Anthropic 会不会自己做？** — 如果 Claude Code 原生支持 "local model offload"，Miser 的用户直接归零。
+3. **token 价格在降** — GPT-4o 比 GPT-4 便宜 10×，Claude 3 Haiku 已经很便宜。如果 token 接近免费，省 token 的价值变小。
+
+### 核心竞争力检验
+
+Miser 的核心护城河不是"省 token"（这是个算术题，谁都能算），而是：
+
+- **model_adapter.py**: 17 个模型家族的 prompt 格式 + 响应清洗，这块 know-how 有壁垒
+- **adaptive.py**: 自学习路由系统，越用越准，有数据网络效应
+- **quality.py + client.py 监督层**: 幻觉检测/语法验证/上下文匹配三重检查，是真正的工程积累
+
+如果有朝一日 token 免费了，Miser 可以 pivot 成"本地 AI 编程代理的质量控制中间件"。
+
+---
+
+## 五、总评分
+
+| 维度 | 评分 | 开源标准 | 商业标准 |
+|------|------|---------|---------|
+| 产品/价值主张 | ★★★★☆ | ✅ | ✅ |
+| 安全 | ★★★☆☆ | ✅ | ❌ |
+| 可靠性/容错 | ★★★☆☆ | ⚠️ | ❌ |
+| 性能 | ★★★★☆ | ✅ | ⚠️ |
+| 分发/部署 | ★★★☆☆ | ✅ | ❌ |
+| 测试 | ★★★★☆ | ✅ | ❌ |
+| 监控/可观测 | ★★★☆☆ | ⚠️ | ❌ |
+| API 设计 | ★★★☆☆ | ⚠️ | ❌ |
+| 文档 | ★★★★☆ | ✅ | ⚠️ |
+| 代码质量 | ★★★★☆ | ✅ | ⚠️ |
+| 法务/合规 | ★★★☆☆ | ✅ | ❌ |
+| 竞争格局 | ★★★★☆ | ✅ | ✅ |
+| **综合** | **★★★☆☆** | **开源可用** | **商业不足** |
+
+**一句话结论：Miser 是一个出色的小工具，解决了一个真实问题，工程质量在持续提升。今天可以作为 MIT 开源项目发布并获得社区关注。但要成为可收费的商业产品，需要在多用户架构、安全加固、监控体系和 CI/CD 上投入 6-12 个月的工程工作。**
