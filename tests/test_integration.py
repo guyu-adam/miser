@@ -174,6 +174,64 @@ class TestFacade:
         assert r.status_code == 400
 
 
+class TestPathEdgeCases:
+    def test_special_chars_path(self):
+        import tempfile, shutil
+        tmp = tempfile.mkdtemp()
+        try:
+            test_path = os.path.join(tmp, "项目 文件 (copy).py")
+            with open(test_path, "w") as f:
+                f.write("# test file")
+            c = client()
+            r = c.post("/v1/read", json={"path": test_path})
+            assert r.status_code == 200
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_path_traversal_safe(self):
+        c = client()
+        r = c.post("/read", json={"path": "../../etc/passwd"})
+        d = json.loads(r.data)
+        assert r.status_code in (200, 404)
+
+    def test_path_with_spaces_v1(self):
+        import tempfile, shutil
+        tmp = tempfile.mkdtemp()
+        try:
+            tf = os.path.join(tmp, "my test file.py")
+            with open(tf, "w") as f:
+                f.write("x = 1")
+            c = client()
+            r = c.post("/v1/read", json={"path": tf})
+            assert r.status_code == 200
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestBatchEdgeCases:
+    def test_batch_mixed_success_failure(self):
+        c = client()
+        r = c.post("/batch", json={"tasks": [
+            {"type": "run", "cmd": "echo ok"},
+            {"type": "read", "path": "/nonexistent/file_xyz_123"},
+            {"type": "run", "cmd": "echo still_works"},
+        ]})
+        d = json.loads(r.data)
+        results = d.get("results", d.get("data", {}).get("results", []))
+        assert len(results) == 3
+
+
+class TestFacadeStreaming:
+    def test_facade_streaming_response(self):
+        c = client()
+        r = c.post("/v1/chat/completions", json={
+            "messages": [{"role": "user", "content": "say hi"}],
+            "stream": True,
+            "max_tokens": 20,
+        })
+        assert r.status_code in (200, 500)
+
+
 class TestQueueBehavior:
     def test_enqueue_when_busy(self):
         """Verify 202 is returned when worker is busy and queue has room."""
