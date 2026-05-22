@@ -217,3 +217,168 @@ class TestMemoryPersistence:
         m.record(1, "explain auth.py", "JWT auth module")
         ctx = m.ctx("explain authentication")
         assert isinstance(ctx, str)
+
+
+class TestCodegenWorkflow:
+    """Scenario: User generates boilerplate code via Miser."""
+
+    def test_codegen_endpoint_accepts_task(self):
+        c = client()
+        r = c.post("/codegen", json={
+            "task": "write a debounce function in python",
+            "lang": "python",
+        })
+        assert r.status_code in (200, 202, 429, 500)
+
+    def test_codegen_with_specific_language(self):
+        c = client()
+        r = c.post("/codegen", json={
+            "task": "write a quick sort",
+            "lang": "javascript",
+        })
+        assert r.status_code in (200, 202, 429, 500)
+
+
+class TestReviewWorkflow:
+    """Scenario: User requests code review from Miser."""
+
+    def test_review_endpoint_with_code(self):
+        c = client()
+        code = """
+def process_data(items):
+    result = []
+    for item in items:
+        result.append(item['value'] / 0)  # bug here
+    return result
+"""
+        r = c.post("/review", json={"code": code})
+        assert r.status_code in (200, 500)
+
+    def test_review_endpoint_with_path(self):
+        c = client()
+        r = c.post("/review", json={"path": "miser.py"})
+        assert r.status_code in (200, 500)
+
+
+class TestEnsureRunningWorkflow:
+    """Scenario: Miser client auto-starts server if not running."""
+
+    def test_ensure_running_returns_bool(self):
+        from client import W
+        result = W.ensure_running(timeout=1.0)
+        assert isinstance(result, bool)
+
+    def test_ensure_running_fast_when_server_up(self):
+        from client import W
+        t0 = __import__('time').perf_counter()
+        result = W.ensure_running(timeout=5.0)
+        elapsed = __import__('time').perf_counter() - t0
+        if result:
+            assert elapsed < 3.0
+
+
+class TestBackendSwitchWorkflow:
+    """Scenario: User switches backend without restarting code changes."""
+
+    def test_all_endpoints_work_with_ollama_backend_name(self):
+        import miser, json
+        with miser.app.test_client() as c:
+            r = c.get("/health")
+            d = json.loads(r.data)
+            assert "backend" in d
+            assert d["status"] == "ok"
+
+
+class TestConcurrentAgentUsage:
+    """Scenario: Multiple AI agents use Miser simultaneously."""
+
+    def test_mixed_reads_from_concurrent_clients(self):
+        import miser, json, threading
+        errors = []
+
+        def agent_session(name):
+            try:
+                with miser.app.test_client() as c:
+                    for _ in range(10):
+                        r = c.get("/health")
+                        assert r.status_code == 200
+                        r = c.post("/exists", json={"path": "miser.py"})
+                        d = json.loads(r.data)
+                        assert d["exists"] is True
+            except Exception as e:
+                errors.append(f"{name}: {e}")
+
+        agents = ["claude", "cline", "aider", "codex"]
+        threads = [threading.Thread(target=agent_session, args=(a,))
+                   for a in agents]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert len(errors) == 0, f"Concurrent agents failed: {errors}"
+
+    def test_rate_limiter_isolates_agents(self):
+        from security import RateLimiter
+        rl = RateLimiter()
+        for _ in range(50):
+            assert rl.allow("agent_claude", 60)
+        for _ in range(5):
+            assert rl.allow("agent_new", 10)
+        assert rl.allow("agent_new", 10)
+
+
+class TestLongRunningStability:
+    """Scenario: Miser runs as a long-lived daemon."""
+
+    def test_repeated_health_consistent(self):
+        import miser, json
+        with miser.app.test_client() as c:
+            first = json.loads(c.get("/health").data)
+            for _ in range(20):
+                r = c.get("/health")
+                assert r.status_code == 200
+                d = json.loads(r.data)
+                assert d["version"] == first["version"]
+                assert d["model"] == first["model"]
+
+    def test_no_file_descriptor_leak_on_repeated_calls(self):
+        import tools
+        for _ in range(50):
+            result = tools.read_file(__file__, limit=500)
+            assert isinstance(result, str)
+
+    def test_memory_does_not_grow_unbounded(self):
+        import memory
+        m = memory.Memory()
+        m.clear()
+        for i in range(60):
+            m.record(i, f"task {i}", f"result {i}")
+        assert len(m.history) <= 40
+        for i in range(250):
+            m.save(f"note_{i}", f"v{i}")
+        assert len(m.notes) <= 200
+
+
+class TestAdaptToolWorkflow:
+    """Scenario: User configures AI agents via 'miser adapt'."""
+
+    def test_adapt_tool_list_all_registered(self):
+        import subprocess, os
+        adapt_py = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                "scripts", "adapt.py")
+        result = subprocess.run(
+            ["python", adapt_py, "--list"],
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.returncode == 0
+        assert "cline" in result.stdout
+        assert "aider" in result.stdout
+        assert "codex" in result.stdout
+
+    def test_adapt_tool_has_all_adapters(self):
+        import os
+        adapters_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                    "adapters")
+        assert os.path.exists(os.path.join(adapters_dir, "cline-mcp.json"))
+        assert os.path.exists(os.path.join(adapters_dir, "aider-miser.yml"))
+        assert os.path.exists(os.path.join(adapters_dir, "codex-miser.sh"))

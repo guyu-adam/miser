@@ -1,4 +1,8 @@
-"""Boundary & limit tests — extremes, edge cases, max inputs."""
+"""Boundary & limit tests — extremes, edge cases, max inputs.
+
+NOTE: SafeEval empty, outline empty, and tree nonexistent edge cases
+are covered in test_tools_edge.py to avoid duplication.
+"""
 import sys, os, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import tools
@@ -48,17 +52,6 @@ class TestEmptyAndNullInputs:
         assert isinstance(result, str)
         os.unlink(f.name)
 
-    def test_outline_empty_file(self):
-        f = tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False)
-        f.write(""); f.close()
-        result = tools.outline_file(f.name)
-        assert "no functions" in result.lower()
-        os.unlink(f.name)
-
-    def test_safe_eval_empty(self):
-        result = tools._safe_eval("")
-        assert "error" in result.lower()
-
     def test_write_empty_content(self):
         result = tools.write_to_file("/tmp/_miser_empty.txt", "")
         assert "Written" in result
@@ -71,11 +64,6 @@ class TestEmptyAndNullInputs:
         # Empty old string matches everywhere — patched or pattern not found
         assert isinstance(result, str)
         os.unlink(f.name)
-
-    def test_tree_nonexistent(self):
-        result = tools.tree_view("/tmp/zzz_nonexistent_boundary_test")
-        assert "not found" in result.lower()
-
 
 class TestUnicodeBoundary:
     def test_read_unicode_file(self):
