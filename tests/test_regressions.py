@@ -14,9 +14,9 @@ class TestBug1DuplicateItems:
     """
 
     def test_batch_no_duplicate_items_init(self):
-        import ast, inspect
+        import ast, inspect, textwrap
         from client import _W
-        source = inspect.getsource(_W.batch)
+        source = textwrap.dedent(inspect.getsource(_W.batch))
         tree = ast.parse(source)
         assigns = [node for node in ast.walk(tree)
                    if isinstance(node, ast.Assign)
@@ -155,7 +155,7 @@ class TestBug4BackendIntegration:
 
     def test_llm_function_calls_backend_generate(self):
         """llm() should use backend.generate(), not direct adapter calls."""
-        import inspect
+        import inspect, miser
         source = inspect.getsource(miser.llm)
         assert "backend.generate" in source
         # Old code must be removed
