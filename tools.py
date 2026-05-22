@@ -157,6 +157,15 @@ _OUTLINE_PATTERNS = {
     ".rb":  [(r"^(\s*)(def |class |module |attr_)(\w+)", "rb")],
     ".sh":  [(r"^(\s*)(\w+\(\)|function \w+)", "sh")],
     ".sql": [(r"^(?i)(CREATE (?:TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|TRIGGER) )(\w+)", "sql")],
+    # New in v1.5 (P1 #9): 8 additional languages
+    ".vue":  [(r"^(\s*)(export default |const |let |var |function |class |interface )(\w+)", "vue")],
+    ".svelte": [(r"^(\s*)(export |let |function |class |const )(\w+)", "svelte")],
+    ".kt":   [(r"^(\s*)(fun |class |interface |object |data class |sealed class |enum class )(\w+)", "kt")],
+    ".swift":[(r"^(\s*)(func |class |struct |enum |protocol |extension |actor |var |let )(\w+)", "swift")],
+    ".c":    [(r"^(static\s+)?(void|int|char|float|double|long|unsigned|struct\s+\w+)\s+(\w+)\s*\([^)]*\)\s*\{?", "c")],
+    ".cpp":  [(r"^(\s*)(class |struct |enum |namespace |template\s*<|virtual\s+|static\s+)?(void|int|bool|auto|string)\s+(\w+)\s*\([^)]*\)", "cpp")],
+    ".cs":   [(r"^(\s*)(public |private |protected |internal |static |class |struct |interface |enum |record )+(\w+)", "cs")],
+    ".dart": [(r"^(\s*)(class |enum |mixin |extension |typedef |void |Future\s*<|String|int|bool|final|const|var |Widget |State(less|ful)Widget )+(\w+)", "dart")],
 }
 
 

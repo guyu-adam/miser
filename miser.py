@@ -625,12 +625,13 @@ if __name__ == "__main__":
         _wizard()
         sys.exit(0)
 
-    # #34 fix: auto-detect first run (no model configured + no memory.json)
-    _memory_file = Path(__file__).parent / "memory.json"
-    if not _memory_file.exists() and not cli.wizard:
+    # P0 #3 fix: bootstrap flag instead of memory.json check
+    _bootstrap_flag = Path(__file__).parent / ".miser_bootstrapped"
+    if not _bootstrap_flag.exists() and not cli.wizard:
         _log.info("First run detected — launching setup wizard")
-        from setup_wizard import wizard as _wizard
+        from scripts.setup_wizard import wizard as _wizard
         _wizard()
+        _bootstrap_flag.touch()
 
     # Update admin + security with resolved values
     _admin.MODEL = MODEL

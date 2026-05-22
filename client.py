@@ -241,11 +241,39 @@ class _W:
         result = d.get("summary") or d.get("error")
         return self._wrap(result, f"git:{path}", "git_summary", "miser-llm")
 
+    def ensure_running(self, timeout: float = 10.0) -> bool:
+        """Auto-start miser if not running. Returns True when ready. (P0 #2)"""
+        import subprocess, sys, time, os
+        try:
+            self.status()
+            return True
+        except Exception:
+            pass
+        # Try to start
+        try:
+            miser_py = os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "miser.py") if "__file__" in dir() \
+                else "miser.py"
+            subprocess.Popen([sys.executable, miser_py],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                time.sleep(0.5)
+                try:
+                    self.status()
+                    return True
+                except Exception:
+                    pass
+            return False
+        except Exception:
+            return False
+
     def batch(self, tasks):
         """tasks: list of tuples — ("run","cmd"), ("outline","~/f.py"),
         ("grep","~/f.py","pattern"), ("tree","~/dir",depth),
         ("exists","~/f"), ("write","~/f","content"), ("ask","task")
         """
+        items = []
         items = []
         for t in tasks:
             typ = t[0]
