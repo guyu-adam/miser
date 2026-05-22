@@ -14,6 +14,7 @@ admin = Blueprint("admin", __name__)
 MODEL = None       # set by miser.py at startup
 ADAPTER = None
 MEM = None
+BACKEND = None
 
 
 @admin.route("/health")
@@ -24,6 +25,7 @@ def health():
         "version": "1.4.1",
         "model": MODEL,
         "model_family": ADAPTER.family if ADAPTER else "?",
+        "backend": BACKEND.base_url if BACKEND else "?",
         "queue_size": q.size,
         "ollama": ollama_breaker.state,
     })
@@ -35,6 +37,7 @@ def status():
     return jsonify({
         "model": MODEL,
         "model_family": ADAPTER.family if ADAPTER else "?",
+        "backend": BACKEND.base_url if BACKEND else "?",
         "tokens_saved_est": get_tokens_saved(),
         "prefetch": prefetch_stats(),
         "queue": q.stats,

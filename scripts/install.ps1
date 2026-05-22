@@ -17,7 +17,8 @@ Write-Host ""
 
 # ── 1. Python check ──────────────────────────────────────────────────────
 Write-Yellow "-> Checking Python..."
-$python = (Get-Command python -ErrorAction SilentlyContinue) ?? (Get-Command python3 -ErrorAction SilentlyContinue)
+$python = Get-Command python -ErrorAction SilentlyContinue
+if (-not $python) { $python = Get-Command python3 -ErrorAction SilentlyContinue }
 if (-not $python) {
     Write-Red "X Python 3.10+ not found."
     Write-Host "  Install from: https://python.org/downloads/ (check 'Add to PATH')"

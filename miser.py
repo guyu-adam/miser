@@ -36,6 +36,7 @@ from config import resolve as resolve_config
 from cache import cache_stats
 from breaker import ollama_breaker
 from facade import set_facade_model
+from backend import resolve_backend
 
 console = Console()
 app = Flask(__name__)
@@ -51,11 +52,13 @@ AUTH_HASH = hash_token(AUTH_TOKEN) if AUTH_TOKEN else ""
 
 adapter = ModelAdapter(MODEL)
 mem = Memory()
+backend = resolve_backend()
 
 import routes.admin as _admin
 _admin.MODEL = MODEL
 _admin.ADAPTER = adapter
 _admin.MEM = mem
+_admin.BACKEND = backend
 
 # Register blueprints at module level (test-safe)
 from routes.zero import zero as _zero_bp, set_run_task as _set_run
@@ -105,14 +108,14 @@ def llm(task: str, system: str = "", max_tokens: int = 600, mode: str = "text") 
     if system:
         sys_prompt += system
 
-    payload = adapter.generate_payload(sys_prompt, task, max_tokens=max_tokens)
-
     for attempt in range(3):
         try:
-            resp = req.post(adapter.url, json=payload, timeout=240)
-            raw  = adapter.extract_text(resp.json())
-            if raw:
-                answer = adapter.clean(raw, mode=detected_mode)
+            answer = backend.generate(MODEL, sys_prompt, task,
+                                      max_tokens=max_tokens, temperature=0.2)
+            if answer:
+                # Post-clean through adapter for code/bullet mode extraction
+                if detected_mode != "text":
+                    answer = adapter.clean(answer, mode=detected_mode)
                 if answer:
                     return answer
             console.print(f"[dim yellow]empty response, retry {attempt+1}/3[/dim yellow]")
@@ -637,6 +640,10 @@ if __name__ == "__main__":
     _admin.MODEL = MODEL
     _admin.ADAPTER = adapter
     _admin.MEM = mem
+    _admin.BACKEND = backend
+
+    # Re-resolve backend in case model changed via CLI
+    backend = resolve_backend()
 
     # Structured logging (Phase 1 #2: JSON mode)
     _log.getLogger("werkzeug").setLevel(_log.WARNING)

@@ -251,9 +251,11 @@ class _W:
             pass
         # Try to start
         try:
-            miser_py = os.path.join(os.path.dirname(os.path.dirname(
-                os.path.abspath(__file__))), "miser.py") if "__file__" in dir() \
-                else "miser.py"
+            try:
+                miser_py = os.path.join(os.path.dirname(os.path.dirname(
+                    os.path.abspath(__file__))), "miser.py")
+            except NameError:
+                miser_py = "miser.py"
             subprocess.Popen([sys.executable, miser_py],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             deadline = time.time() + timeout
@@ -273,7 +275,6 @@ class _W:
         ("grep","~/f.py","pattern"), ("tree","~/dir",depth),
         ("exists","~/f"), ("write","~/f","content"), ("ask","task")
         """
-        items = []
         items = []
         for t in tasks:
             typ = t[0]
