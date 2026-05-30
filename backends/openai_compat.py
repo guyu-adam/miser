@@ -1,5 +1,5 @@
 """
-backends/openai_compat.py — OpenAI-compatible API backend.
+backends/openai_compat.py - OpenAI-compatible API backend.
 Probes common ports: 1234 (LM Studio), 8080 (llama.cpp), 8000 (vLLM), 8081 (LocalAI).
 
 Also works as a generic catch-all for any /v1/chat/completions endpoint.

@@ -1,5 +1,5 @@
 """
-Miser v2.0 — Zero-token local AI co-processor.
+Miser v2.0 - Zero-token local AI co-processor.
 Auto-detects any local LLM (Ollama, LM Studio, llama.cpp, vLLM, etc.).
 Two execution paths:
   1. Zero-LLM (<50ms): shell, file read/write/grep/tree/exists/outline/patch
@@ -56,7 +56,7 @@ HOST = cfg["host"]
 LOG_FORMAT = cfg["log_format"]
 AUTH_HASH = hash_token(AUTH_TOKEN) if AUTH_TOKEN else ""
 
-# Lazy placeholders — replaced in __main__ after auto-discovery
+# Lazy placeholders - replaced in __main__ after auto-discovery
 adapter = None
 mem = Memory()
 backend = None
@@ -80,7 +80,7 @@ app.register_blueprint(_facade_bp, url_prefix="/v1")
 class State:
     def __init__(self):
         self.status = "IDLE"
-        self.task   = "—"
+        self.task   = "-"
         self.result = ""
         self.count  = 0
         self._lock  = threading.Lock()
@@ -151,7 +151,7 @@ EXPLICIT_ROUTES = {
     "calc":     lambda d: _safe_eval(d.get("expr","0")),   # review item #1
 }
 
-# Legacy regex routing — now only for /ask fallback (review item #9)
+# Legacy regex routing - now only for /ask fallback (review item #9)
 FALLBACK_ROUTES = [
     (re.compile(I18N_PATTERNS["list_files"] + r".{0,20}?" + I18N_PATTERNS["file_dir_words"], re.I),
      lambda t: list_dir(extract_path(t, "~/Desktop"))),
@@ -209,7 +209,7 @@ def run_task(task: str, sender: str, system: str = "", max_tokens: int = 600,
         st.result = result
         console.print(Panel(result, title="[red]✗[/red]", border_style="red"))
     finally:
-        st.set("IDLE", "—")
+        st.set("IDLE", "-")
         # v1.3: drain queued tasks (commercialization P0)
         q = get_queue()
         next_task = q.dequeue()
@@ -226,7 +226,7 @@ def run_task(task: str, sender: str, system: str = "", max_tokens: int = 600,
 # ── endpoints ────────────────────────────────────────────────────────────────────
 
 def _auth_fail():
-    return jsonify({"error": "unauthorized — MISER_AUTH_TOKEN required"}), 401
+    return jsonify({"error": "unauthorized - MISER_AUTH_TOKEN required"}), 401
 
 @app.route("/ask", methods=["POST"])
 def ask():
@@ -645,7 +645,7 @@ if __name__ == "__main__":
 
     # ── Auto-discovery ─────────────────────────────────────────────────────
     console.print()
-    console.print(Panel("[bold cyan]Miser v2.0[/bold cyan] — Auto-detecting local LLM...",
+    console.print(Panel("[bold cyan]Miser v2.0[/bold cyan] - Auto-detecting local LLM...",
                         border_style="cyan"))
 
     from backends import discover_backend

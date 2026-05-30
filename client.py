@@ -1,5 +1,5 @@
 """
-Miser v2.0 client for any agent — with quality assurance.
+Miser v2.0 client for any agent - with quality assurance.
 Cross-platform: Windows, macOS, Linux.
 
 Usage:
@@ -262,7 +262,7 @@ class _W:
             return False
 
     def batch(self, tasks):
-        """tasks: list of tuples — ("run","cmd"), ("outline","~/f.py"),
+        """tasks: list of tuples - ("run","cmd"), ("outline","~/f.py"),
         ("grep","~/f.py","pattern"), ("tree","~/dir",depth),
         ("exists","~/f"), ("write","~/f","content"), ("ask","task")
         """

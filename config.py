@@ -1,5 +1,5 @@
 """
-config.py — Centralized configuration for Miser v2.0.
+config.py - Centralized configuration for Miser v2.0.
 Single source of truth for all env vars, CLI args, and defaults.
 
 New in v2.0: model="auto" means auto-detect from available backends.
@@ -46,7 +46,7 @@ def from_env() -> dict:
 
 def parse_cli(argv: list = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Miser v2.0 — Zero-token local AI co-processor",
+        description="Miser v2.0 - Zero-token local AI co-processor",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

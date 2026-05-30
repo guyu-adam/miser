@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Miser MCP Server v2.0 — Agent-agnostic MCP stdio protocol bridge.
+Miser MCP Server v2.0 - Agent-agnostic MCP stdio protocol bridge.
 
 Exposes Miser's zero-token file ops and local-LLM tasks to ANY MCP-compatible agent:
   - Claude Desktop
@@ -37,10 +37,10 @@ def _post(endpoint: str, data: dict) -> dict:
 # ── Tool definitions ──────────────────────────────────────────────────────────
 
 TOOLS = [
-    # Zero-LLM tools (no token cost — instant)
+    # Zero-LLM tools (no token cost - instant)
     {
         "name": "miser_read",
-        "description": "Read a file via Miser. Zero API tokens — served instantly from disk on the Miser host.",
+        "description": "Read a file via Miser. Zero API tokens - served instantly from disk on the Miser host.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -112,10 +112,10 @@ TOOLS = [
         },
     },
 
-    # Local LLM tools (zero API cost — runs on local GPU)
+    # Local LLM tools (zero API cost - runs on local GPU)
     {
         "name": "miser_ask",
-        "description": "Ask the local LLM a question. Runs on local GPU — zero API cost.",
+        "description": "Ask the local LLM a question. Runs on local GPU - zero API cost.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -268,7 +268,7 @@ def handle_request(request: dict) -> dict | None:
 
 
 def main():
-    """MCP stdio loop — reads JSON-RPC from stdin, writes to stdout."""
+    """MCP stdio loop - reads JSON-RPC from stdin, writes to stdout."""
     for line in sys.stdin:
         line = line.strip()
         if not line:

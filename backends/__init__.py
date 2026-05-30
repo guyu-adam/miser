@@ -1,5 +1,5 @@
 """
-backends/__init__.py — Backend registry and auto-discovery.
+backends/__init__.py - Backend registry and auto-discovery.
 
 Usage:
     from backends import discover_backend

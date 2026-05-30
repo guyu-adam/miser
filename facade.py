@@ -1,10 +1,10 @@
 """
-facade.py — OpenAI-compatible API facade for Miser v2.0.
+facade.py - OpenAI-compatible API facade for Miser v2.0.
 Multi-backend support: Ollama, OpenAI-compat, auto-detected.
 
 Exposes:
-  /v1/chat/completions   — OpenAI-format chat
-  /v1/models             — model list
+  /v1/chat/completions   - OpenAI-format chat
+  /v1/models             - model list
 
 Unlocks: Continue.dev, LangChain, CrewAI, AutoGPT, Cursor, Windsurf, etc.
 """
