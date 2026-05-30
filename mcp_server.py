@@ -204,7 +204,7 @@ def handle_request(request: dict) -> dict | None:
             "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "miser-mcp", "version": "2.0.0"},
+                "serverInfo": {"name": "miser-mcp", "version": "2.0.2"},
             },
         }
 

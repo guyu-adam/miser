@@ -109,6 +109,9 @@ class State:
 
 st = State()
 
+# Flag set in main() during backend discovery
+NO_LLM = False
+
 # ── auth helper (review item #4) ────────────────────────────────────────────────
 
 def _check_auth(req_data: dict) -> bool:
@@ -636,32 +639,28 @@ def note():
 # ── v2.0: auto-detect backend + model on startup ───────────────────────────────
 
 def main():
-    """Entry point for 'miser' CLI command (pip install)."""
-    import sys as _sys
+    """Entry point for 'miser' CLI command (pip install).
+    Also called by if __name__ == '__main__'.
+    """
+    import sys as _sys, json as _json, logging as _log
+    global MODEL, AUTH_TOKEN, PORT, HOST, LOG_FORMAT, AUTH_HASH, adapter, backend, NO_LLM
     _sys.argv[0] = "miser"
-    # The __main__ block below handles initialization
 
-if __name__ == "__main__":
-    main()
-
-    import json as _json
-    import logging as _log
-
-    # Re-resolve with CLI args
-    cli_cfg = resolve_config(argv=sys.argv[1:])
-    MODEL = cli_cfg["model"]
+    # ── Re-resolve with CLI args ──────────────────────────────────────────
+    cli_cfg = resolve_config(argv=_sys.argv[1:])
+    MODEL      = cli_cfg["model"]
     AUTH_TOKEN = cli_cfg["auth_token"]
-    PORT = cli_cfg["port"]
-    HOST = cli_cfg["host"]
+    PORT       = cli_cfg["port"]
+    HOST       = cli_cfg["host"]
     LOG_FORMAT = cli_cfg["log_format"]
-    AUTH_HASH = hash_token(AUTH_TOKEN) if AUTH_TOKEN else ""
+    AUTH_HASH  = hash_token(AUTH_TOKEN) if AUTH_TOKEN else ""
 
     cli = cli_cfg["_cli"]
     if cli.version:
-        print("Miser v2.0.0")
-        sys.exit(0)
+        print("Miser v2.0.2")
+        _sys.exit(0)
 
-    # ── Auto-discovery ─────────────────────────────────────────────────────
+    # ── Auto-discovery ───────────────────────────────────────────────────
     console.print()
     console.print(Panel("[bold cyan]Miser v2.0[/bold cyan] - Auto-detecting local LLM...",
                         border_style="cyan"))
@@ -679,13 +678,13 @@ if __name__ == "__main__":
         console.print("    1. Download: https://ollama.com")
         console.print("    2. Install and run: ollama serve")
         console.print("    3. Pull a model:   ollama pull gemma4:latest")
-        console.print("    4. Restart Miser:  python miser.py")
+        console.print("    4. Restart Miser:  miser")
         console.print()
         console.print("  [bold]Option B: LM Studio[/bold] (GUI)")
         console.print("    1. Download: https://lmstudio.ai")
         console.print("    2. Download any model in the app")
         console.print("    3. Start the local server (port 1234)")
-        console.print("    4. Restart Miser:  python miser.py")
+        console.print("    4. Restart Miser:  miser")
         console.print()
         console.print("[dim]Zero-LLM endpoints (/read, /grep, /run, etc.) work without a model.[/dim]")
         console.print("[dim]Add --setup to see this guide again.[/dim]")
@@ -693,7 +692,6 @@ if __name__ == "__main__":
         NO_LLM = True
     else:
         NO_LLM = False
-        # Auto-select model
         if MODEL == "auto":
             models = backend.list_models()
             if models:
@@ -712,15 +710,15 @@ if __name__ == "__main__":
                 console.print(f"  [red]Model init failed: {e}[/red]")
                 NO_LLM = True
 
-    # ── Bootstrap ──────────────────────────────────────────────────────────
+    # ── Bootstrap ────────────────────────────────────────────────────────
     _bootstrap_flag = Path(__file__).parent / ".miser_bootstrapped"
     if not _bootstrap_flag.exists() and not os.environ.get("MISER_NO_WIZARD"):
         _bootstrap_flag.touch()
 
-    # ── Update cross-module state ──────────────────────────────────────────
-    _admin.MODEL = MODEL
+    # ── Update cross-module state ────────────────────────────────────────
+    _admin.MODEL   = MODEL
     _admin.ADAPTER = adapter
-    _admin.MEM = mem
+    _admin.MEM     = mem
     _admin.BACKEND = backend
 
     # Structured logging
@@ -729,11 +727,11 @@ if __name__ == "__main__":
     class JsonFormatter(_log.Formatter):
         def format(self, record):
             entry = {
-                "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                "level": record.levelname,
-                "message": record.getMessage(),
-                "module": record.name,
-                "version": "2.0.0",
+                "timestamp":  datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                "level":      record.levelname,
+                "message":    record.getMessage(),
+                "module":     record.name,
+                "version":    "2.0.2",
             }
             if record.exc_info and record.exc_info[0]:
                 import traceback
@@ -750,7 +748,7 @@ if __name__ == "__main__":
             h.setFormatter(fmt)
 
     _log.basicConfig(level=_log.INFO, handlers=handlers, force=True)
-    _log.info(f"Miser v2.0.0 port={PORT} model={MODEL} backend={backend.name if backend else 'none'}")
+    _log.info(f"Miser v2.0.2 port={PORT} model={MODEL} backend={backend.name if backend else 'none'}")
 
     # Register security middleware
     app.before_request(rate_limit_middleware)
@@ -781,7 +779,7 @@ if __name__ == "__main__":
                 run_task(task.task, task.sender, task.system, task.max_tokens, task.explicit_type)
                 drained += 1
         _log.info(f"Shutdown complete. Drained {drained} tasks.")
-        sys.exit(0)
+        _sys.exit(0)
 
     signal.signal(signal.SIGTERM, _handle_shutdown)
     signal.signal(signal.SIGINT, _handle_shutdown)
@@ -794,18 +792,18 @@ if __name__ == "__main__":
                 payload = adapter.generate_payload("", "ok", max_tokens=1)
                 req.post(adapter.url, json=payload, timeout=60)
                 _log.info("LLM warmed up")
-                console.print("[dim green]✓ LLM warmed up[/dim green]")
+                console.print("[dim green]v LLM warmed up[/dim green]")
             except Exception:
                 pass
         threading.Thread(target=_warmup, daemon=True).start()
 
-    auth_note = "[yellow]AUTH enabled[/yellow]" if AUTH_TOKEN else "no auth"
-    log_note = "json" if LOG_FORMAT == "json" else "text"
+    auth_note   = "[yellow]AUTH enabled[/yellow]" if AUTH_TOKEN else "no auth"
+    log_note    = "json" if LOG_FORMAT == "json" else "text"
     backend_note = f"{backend.name} @ {backend.base_url}" if backend else "none"
-    model_note = MODEL if not NO_LLM else "[yellow]none (zero-LLM only)[/yellow]"
+    model_note  = MODEL if not NO_LLM else "[yellow]none (zero-LLM only)[/yellow]"
 
     console.print(Panel(
-        "[bold cyan]Miser v2.0[/bold cyan]  ·  Agent-agnostic local co-processor\n\n"
+        "[bold cyan]Miser v2.0[/bold cyan]  *  Agent-agnostic local co-processor\n\n"
         "[bold]Zero-LLM endpoints (<50ms):[/bold]\n"
         "  [green]/read /grep /outline /tree /exists /run /write /patch[/green]\n\n"
         "[bold]Local-LLM endpoints (0 API tokens):[/bold]\n"
@@ -819,7 +817,10 @@ if __name__ == "__main__":
         border_style="cyan", title="[bold]Ready[/bold]"
     ))
     _log.info("Ready.")
-    console.print("[green]✓ Waiting...[/green]\n")
+    console.print("[green]v Waiting...[/green]\n")
 
     while not _shutdown_flag.is_set():
         time.sleep(1)
+
+if __name__ == "__main__":
+    main()

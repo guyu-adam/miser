@@ -1,257 +1,144 @@
-# Miser — Save 98% API Tokens with Your Local GPU
+# Miser v2.0 — 零 Token 本地 AI 协处理器
 
-**Stop burning cloud tokens on file reads. Offload everything to your local Ollama GPU.**
+**把你的本地 GPU 变成 AI 助手的外挂。零 API token，零延迟，零配置。**
 
-Miser runs at `localhost:7860` and intercepts the expensive parts of AI coding sessions:
-- **File ops, grep, tree** → served instantly from disk, zero LLM, zero tokens
-- **Code gen, explain, fix, review, tests** → runs on your local Ollama model, zero API cost
+Miser 运行在 `localhost:7860`，自动检测你本地任何 LLM 后端：
 
-Works with **Claude Code**, **Codex CLI**, **Aider**, or any agent that can call HTTP.
+- **Ollama** (推荐) — 自动发现，自动选模型
+- **LM Studio** — 端口扫描，开箱即用
+- **llama.cpp / vLLM / LocalAI** — OpenAI 兼容，即插即用
 
----
-
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://python.org)
-[![Ollama](https://img.shields.io/badge/LLM-Ollama-green.svg)](https://ollama.com)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Zero API Cost](https://img.shields.io/badge/local%20LLM%20ops-$0.00-brightgreen.svg)](#)
+支持 **Claude Code、Codex CLI、Hermes Agent、Continue.dev、Cursor、Windsurf** 等任何支持 MCP 或 HTTP 的工具。
 
 ---
 
-## Live Demo (May 2026)
+## 快速开始
 
-**[▶ Play terminal recording](demo.cast)** — `asciinema play demo.cast`
-
-```
-╭───────────────────────────────────────────────────────────────────╮
-│ ⚡ Miser v1.1 — Save 98% API Tokens with Your Local GPU          │
-│ Claude Code Co-Processor  |  ollama://qwen3.5:4b  |  $0 API Cost │
-╰───────────────────────────────────────────────────────────────────╯
-
-───────────────── SESSION SUMMARY ─────────────────
-Operation                Without Miser    With Miser    Saved    Pct
-─────────────────────────────────────────────────────────────────────
-Read+Outline 300-lines             1,936          109    1,827    94%
-Project mapping (6 files)         16,069          144   15,925    99%
-Debug & Fix error                    228           $0      228   100%
-Generate unit tests                  900           $0      900   100%
-─────────────────────────────────────────────────────────────────────
-TOTAL                             19,133          253   18,880    98%
-─────────────────────────────────────────────────────────────────────
-
-💰 Per session:  $0.0574 → $0.0008  (~18,880 tokens saved (estimated))
-   Per month:     $3.44   → $0.05    ($3.40 saved)
-   Per year:      $41.33  → $0.55    ($40.78 saved)
-```
-
-*Benchmarked with Claude Sonnet pricing ($3/MTok) on qwen3.5:4b via Ollama, Linux.*
-
----
-
-## The Problem
-
-Every time your AI assistant reads a file to understand it, map its structure, or generate a test — it burns tokens:
-
-| What your agent does | Tokens consumed | Cost |
-|---|---|---|
-| `Read` a 300-line file to find one function | ~1,900 tokens | $0.006 |
-| `Read` 6 files to map a project | ~16,000 tokens | $0.048 |
-| Generate a test suite for a module | ~900 tokens | $0.003 |
-| Debug + fix one error | ~230 tokens | $0.001 |
-
-In a typical 2-hour Claude Code session, **40-60% of token spend is on these mechanical tasks**. That's **~$0.06 you're burning per session** just for file understanding.
-
-## The Solution
-
-Miser intercepts those calls and handles them locally:
-
-| Expensive cloud call | Miser equivalent | Token cost |
-|---|---|---|
-| `Read(large_file)` → ~1,936 tokens | `W.outline(path)` | **~109 tokens** (94% saved) |
-| Read 6 files → ~16,069 tokens | `W.tree(project)` | **~144 tokens** (99% saved) |
-| Generate tests yourself | `W.test(path)` | **$0.00** (local GPU) |
-| Analyze error + write fix | `W.fix(error, code=...)` | **$0.00** (local GPU) |
-| Read to understand module | `W.explain(path)` | **$0.00** (local GPU) |
-| Code review | `W.review(path)` | **$0.00** (local GPU) |
-
-**~18,880 tokens saved per session — ~98% reduction.**
-
----
-
-## Quick Start
-
-### Linux / macOS
 ```bash
 git clone https://github.com/guyu-adam/miser.git
 cd miser
-bash install.sh          # installs deps, pulls qwen3.5:4b, starts service
+
+# 方式 1：直接运行 (零安装)
+python3 miser.py
+
+# 方式 2：pip 安装 (全局可用)
+pip install -e .
+miser
 ```
 
-### Windows
-```powershell
-git clone https://github.com/guyu-adam/miser.git
-cd miser
-pip install flask requests rich
-ollama pull qwen3.5:4b
-python miser.py          # server starts on http://localhost:7860
-```
-No auto-start on Windows — keep the terminal open or use Task Scheduler to run `python miser.py` at login.
+Windows：双击 `miser.bat`  
+macOS/Linux：`./miser.sh`
 
-### pip install (all platforms)
-```bash
-pip install -e .         # editable install, then import miser from anywhere
-```
-
-Then in your Claude Code session (or any agent):
-
-```python
-import sys; sys.path.insert(0, '/path/to/miser')
-from client import W
-
-W.outline("~/project/app.py")          # function/class map — ~109 tokens (was 1,936)
-W.grep("~/project/app.py", "def auth") # find a function — ~50 tokens
-W.explain("~/project/utils.py")        # understand module — $0 (local GPU)
-W.fix("TypeError: NoneType", code="…") # debug + fix — $0 (local GPU)
-W.test("~/project/utils.py")           # write tests — $0 (local GPU)
-```
-
-**Requirements**: Python 3.10+, [Ollama](https://ollama.com) installed and running.
-GPU optional — works on CPU, just slower (4b model: ~40s on CPU, ~10s on GPU).
+**自动检测后端 → 自动选择模型 → 直接可用。** 没有本地 LLM 也能用零 token 文件操作。
 
 ---
 
-## Full API
+## API
 
-### Zero-LLM ops — instant, no model needed
-
-```python
-W.outline(path)               # → "def foo [L12]\nclass Bar [L34]\n..."
-W.grep(path, pattern, ctx=2)  # → matching lines with context
-W.tree(path, depth=2)         # → directory tree string
-W.exists(path)                # → {"exists": True, "size_kb": 12}
-W.run("git diff --stat")      # → shell output
-W.read(path)                  # → file content (use sparingly)
-W.write(path, content)        # → write file
-W.patch(path, old, new)       # → find-and-replace in file
-```
-
-### Local-LLM ops — runs on Ollama, zero API tokens
-
-```python
-W.explain(path_or_code)              # plain-English explanation
-W.fix(error_msg, code="...")         # error message → suggested fix
-W.test(path, function="parse")       # generate pytest tests
-W.review(path)                       # bug + improvement review
-W.codegen("write RSI indicator")     # code generation
-W.summarize(path, focus="errors")    # compress file to bullets
-W.git_summary(path, n=10)            # recent commits summary
-W.ask("any freeform task")           # general purpose
-```
-
-### Batch — one HTTP round-trip for multiple ops
-
-```python
-results = W.batch([
-    ("outline", "~/project/app.py"),
-    ("outline", "~/project/models.py"),
-    ("run",     "git status"),
-    ("exists",  "~/project/.env"),
-])
-```
-
----
-
-## Integration with Claude Code
-
-Add to your `CLAUDE.md`:
-
-```markdown
-## Miser — Local Token Saver (ALWAYS USE THIS)
-
-Miser runs at http://localhost:7860.
-
-import sys; sys.path.insert(0, '/path/to/miser')
-from client import W
-
-| Task | Do NOT do this | Do THIS instead |
-|------|---------------|-----------------|
-| Map file structure | Read(large_file) | W.outline(path) |
-| Find one function | Read(large_file) | W.grep(path, "def fn") |
-| Understand a module | Read + reason | W.explain(path) |
-| Write tests | Generate yourself | W.test(path) |
-| Debug error | Reason yourself | W.fix(error, code=ctx) |
-| Multiple lookups | Sequential Reads | W.batch([...]) |
-```
-
----
-
-## Live Benchmarks (May 2026)
-
-Tested on miser's own codebase (6 Python files, 64K chars), with `qwen3.5:4b` on Ollama, Linux:
-
-```
-─── Zero-LLM endpoints ───
-  ✓ status             1ms
-  ✓ exists             1ms
-  ✓ read               1ms
-  ✓ outline            5ms
-  ✓ grep               4ms
-  ✓ tree               2ms
-  ✓ run                4ms
-  ✓ batch (2x)         2ms
-
-─── Local-LLM endpoints ───
-  ✓ codegen           1.0s
-  ✓ fix               0.9s
-  ✓ explain           0.6s
-  ✓ review            0.4s
-  ✓ test             10.1s
-  ✓ summarize         1.0s
-  ✓ ask               0.2s
-```
-
-### Per-session savings (measured)
-
-| Metric | Without Miser | With Miser | Savings |
-|---|---|---|---|
-| File reads & mapping | 18,005 tokens | 253 tokens | **-98.6%** |
-| LLM ops (tests, explain, fix, review) | 1,128 tokens | $0.00 | **-100%** |
-| **Total session tokens** | **19,133** | **253** | **-98.7%** |
-| **Estimated cost (Claude Sonnet)** | **$0.057** | **$0.001** | **-$0.057/session** |
-| **Per month (60 sessions)** | **$3.44** | **$0.05** | **-$3.40** |
-| **Per year (720 sessions)** | **$41.33** | **$0.55** | **-$40.78** |
-
----
-
-## Changing the Model
+### 零 Token 端点 (<50ms, 无需模型)
 
 ```bash
-ollama pull mistral:7b
-MISER_MODEL=mistral:7b bash start.sh
+curl -X POST localhost:7860/read    -d '{"path":"~/project/app.py"}'
+curl -X POST localhost:7860/grep    -d '{"path":"~/project/","pattern":"def "}'
+curl -X POST localhost:7860/outline -d '{"path":"~/project/app.py"}'
+curl -X POST localhost:7860/tree    -d '{"path":"~/project/","depth":2}'
+curl -X POST localhost:7860/run     -d '{"cmd":"pytest --tb=short -q"}'
+curl -X POST localhost:7860/write   -d '{"path":"~/out.txt","content":"hi"}'
+curl -X POST localhost:7860/patch   -d '{"path":"~/f.py","old":"foo","new":"bar"}'
+curl -X POST localhost:7860/exists  -d '{"path":"~/project/.env"}'
 ```
 
-Tested models: `qwen3.5:4b` (default, fast), `qwen3.5:latest` (8B, smarter),
-`mistral:7b`, `llama3.1:8b`, `phi4`, `gemma3:4b`, `deepseek-coder:6.7b`.
+### 本地 LLM 端点 (零 API 费用)
+
+```bash
+curl -X POST localhost:7860/ask        -d '{"task":"What is 2+3?"}'
+curl -X POST localhost:7860/explain    -d '{"path":"~/project/app.py"}'
+curl -X POST localhost:7860/fix        -d '{"error":"TypeError: NoneType","code":"..."}'
+curl -X POST localhost:7860/test       -d '{"path":"~/project/utils.py"}'
+curl -X POST localhost:7860/review     -d '{"path":"~/project/app.py"}'
+curl -X POST localhost:7860/codegen    -d '{"task":"RSI indicator","lang":"python"}'
+curl -X POST localhost:7860/summarize  -d '{"path":"~/project/app.py"}'
+curl -X POST localhost:7860/git_summary -d '{"path":"~/project/","n":10}'
+curl -X POST localhost:7860/condense   -d '{"path":"~/project/app.py"}'
+```
+
+### Admin 端点
+
+```bash
+curl localhost:7860/health
+curl localhost:7860/status
+curl localhost:7860/metrics
+```
 
 ---
 
-## Architecture
+## MCP 集成 (Claude Desktop / Hermes / Continue / Cursor)
 
+```json
+{
+  "mcpServers": {
+    "miser": {
+      "command": "python3",
+      "args": ["/path/to/miser/mcp_server.py"],
+      "env": { "MISER_URL": "http://localhost:7860" }
+    }
+  }
+}
 ```
-Claude Code / Aider / Codex
-        │  HTTP POST localhost:7860
-        ▼
-  ┌─────────────────────┐
-  │      miser.py       │
-  │  ┌───────────────┐  │
-  │  │ tools.py      │──┼──► disk / shell  (<50ms)
-  │  │ Zero-LLM ops  │  │
-  │  └───────────────┘  │
-  │  ┌───────────────┐  │
-  │  │ memory.py     │──┼──► Ollama API   ($0)
-  │  │ Local-LLM ops │  │
-  │  └───────────────┘  │
-  └─────────────────────┘
+
+MCP 提供 11 个工具：`miser_read`、`miser_grep`、`miser_run`、`miser_write`、`miser_patch`、`miser_tree`、`miser_ask`、`miser_codegen`、`miser_explain`、`miser_review`、`miser_summarize`
+
+---
+
+## OpenAI 兼容 API
+
+Miser 暴露标准 `/v1/chat/completions` 和 `/v1/models`，可直接接入 Continue.dev、LangChain、CrewAI 等：
+
+```python
+import openai
+client = openai.OpenAI(base_url="http://localhost:7860/v1", api_key="local")
+client.chat.completions.create(
+    model="auto",  # auto = 使用检测到的模型
+    messages=[{"role": "user", "content": "Hello!"}],
+)
 ```
+
+---
+
+## 配置
+
+```bash
+# 环境变量
+MISER_MODEL=gemma4:latest  miser     # 指定模型
+MISER_PORT=8080             miser     # 自定义端口
+
+# CLI 参数
+miser --port 8080 --model mistral:7b --auth-token my-secret --log-format json
+```
+
+---
+
+## Python 客户端
+
+```python
+from client import W
+
+W.outline("~/project/app.py")   # 函数/类结构
+W.grep("~/project/", "def fn")  # 搜索
+W.explain("~/project/utils.py") # 解释代码 (本地 LLM)
+W.test("~/project/utils.py")    # 生成测试 (本地 LLM)
+W.review("~/project/app.py")    # 代码审查 (本地 LLM)
+```
+
+---
+
+## 平台
+
+| 平台 | 启动方式 | 自动启动 |
+|------|---------|---------|
+| macOS | `./miser.sh` | `bash scripts/install.sh` → LaunchAgent |
+| Linux | `./miser.sh` | `bash scripts/install.sh` → systemd user service |
+| Windows | `miser.bat` (双击) | 手动 / Task Scheduler |
 
 ---
 
