@@ -2,145 +2,147 @@
 
 **把你的本地 GPU 变成 AI 助手的外挂。零 API token，零延迟，零配置。**
 
-Miser 运行在 `localhost:7860`，自动检测你本地任何 LLM 后端：
-
-- **Ollama** (推荐) — 自动发现，自动选模型
-- **LM Studio** — 端口扫描，开箱即用
-- **llama.cpp / vLLM / LocalAI** — OpenAI 兼容，即插即用
-
-支持 **Claude Code、Codex CLI、Hermes Agent、Continue.dev、Cursor、Windsurf** 等任何支持 MCP 或 HTTP 的工具。
+配一次 MCP JSON，以后每次用 agent 自动就位。
 
 ---
 
-## 快速开始
+## 使用方式（最终形态）
 
 ```bash
 git clone https://github.com/guyu-adam/miser.git
 cd miser
-
-# 方式 1：直接运行 (零安装)
-python3 miser.py
-
-# 方式 2：pip 安装 (全局可用)
-pip install -e .
-miser
+pip install flask rich requests
 ```
 
-Windows：双击 `miser.bat`  
-macOS/Linux：`./miser.sh`
-
-**自动检测后端 → 自动选择模型 → 直接可用。** 没有本地 LLM 也能用零 token 文件操作。
-
----
-
-## API
-
-### 零 Token 端点 (<50ms, 无需模型)
-
-```bash
-curl -X POST localhost:7860/read    -d '{"path":"~/project/app.py"}'
-curl -X POST localhost:7860/grep    -d '{"path":"~/project/","pattern":"def "}'
-curl -X POST localhost:7860/outline -d '{"path":"~/project/app.py"}'
-curl -X POST localhost:7860/tree    -d '{"path":"~/project/","depth":2}'
-curl -X POST localhost:7860/run     -d '{"cmd":"pytest --tb=short -q"}'
-curl -X POST localhost:7860/write   -d '{"path":"~/out.txt","content":"hi"}'
-curl -X POST localhost:7860/patch   -d '{"path":"~/f.py","old":"foo","new":"bar"}'
-curl -X POST localhost:7860/exists  -d '{"path":"~/project/.env"}'
-```
-
-### 本地 LLM 端点 (零 API 费用)
-
-```bash
-curl -X POST localhost:7860/ask        -d '{"task":"What is 2+3?"}'
-curl -X POST localhost:7860/explain    -d '{"path":"~/project/app.py"}'
-curl -X POST localhost:7860/fix        -d '{"error":"TypeError: NoneType","code":"..."}'
-curl -X POST localhost:7860/test       -d '{"path":"~/project/utils.py"}'
-curl -X POST localhost:7860/review     -d '{"path":"~/project/app.py"}'
-curl -X POST localhost:7860/codegen    -d '{"task":"RSI indicator","lang":"python"}'
-curl -X POST localhost:7860/summarize  -d '{"path":"~/project/app.py"}'
-curl -X POST localhost:7860/git_summary -d '{"path":"~/project/","n":10}'
-curl -X POST localhost:7860/condense   -d '{"path":"~/project/app.py"}'
-```
-
-### Admin 端点
-
-```bash
-curl localhost:7860/health
-curl localhost:7860/status
-curl localhost:7860/metrics
-```
-
----
-
-## MCP 集成 (Claude Desktop / Hermes / Continue / Cursor)
+然后在你的 agent 的 MCP 配置里加一段 JSON：
 
 ```json
 {
   "mcpServers": {
     "miser": {
       "command": "python3",
-      "args": ["/path/to/miser/mcp_server.py"],
-      "env": { "MISER_URL": "http://localhost:7860" }
+      "args": ["/path/to/miser/mcp_server.py"]
     }
   }
 }
 ```
 
-MCP 提供 11 个工具：`miser_read`、`miser_grep`、`miser_run`、`miser_write`、`miser_patch`、`miser_tree`、`miser_ask`、`miser_codegen`、`miser_explain`、`miser_review`、`miser_summarize`
+**就这样。** agent 调 Miser 工具时，Miser 服务自动后台拉起。设备上没 Ollama？零 token 的文件操作照样能用。
 
 ---
 
-## OpenAI 兼容 API
+## 自动检测的后端
 
-Miser 暴露标准 `/v1/chat/completions` 和 `/v1/models`，可直接接入 Continue.dev、LangChain、CrewAI 等：
+| 后端 | 检测方式 | 零配置 |
+|------|---------|--------|
+| Ollama | `localhost:11434` → `/api/tags` | ✓ |
+| LM Studio | 扫描 `localhost:1234` | ✓ |
+| llama.cpp | 扫描 `localhost:8080` | ✓ |
+| vLLM | 扫描 `localhost:8000` | ✓ |
+
+---
+
+## 工具列表
+
+**零 Token（无需模型，永远可用）：**
+`miser_read` / `miser_grep` / `miser_run` / `miser_write` / `miser_patch` / `miser_tree`
+
+**本地 LLM（有后端时自动可用）：**
+`miser_ask` / `miser_codegen` / `miser_explain` / `miser_review` / `miser_summarize`
+
+---
+
+## 各 Agent 配置
+
+### Claude Desktop
+
+`~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) 或 `%APPDATA%\Claude\claude_desktop_config.json` (Windows)：
+
+```json
+{
+  "mcpServers": {
+    "miser": {
+      "command": "python3",
+      "args": ["/path/to/miser/mcp_server.py"]
+    }
+  }
+}
+```
+
+### Hermes Agent
+
+`~/.hermes/config.yaml`:
+
+```yaml
+mcp_servers:
+  miser:
+    command: python3
+    args: ["/path/to/miser/mcp_server.py"]
+```
+
+### Continue.dev
+
+`~/.continue/config.json`:
+
+```json
+{
+  "experimental": {
+    "mcpServers": {
+      "miser": {
+        "command": "python3",
+        "args": ["/path/to/miser/mcp_server.py"]
+      }
+    }
+  }
+}
+```
+
+### Cursor / Windsurf
+
+在设置中搜索 "MCP"，添加 server：
+
+- Name: `miser`
+- Command: `python3 /path/to/miser/mcp_server.py`
+
+---
+
+## 高级用法
+
+### 手动启动（不需要 MCP）
+
+```bash
+python3 miser.py            # 自动检测后端
+miser --port 8080           # 自定义端口
+miser --model gemma4:latest # 指定模型
+```
+
+### OpenAI 兼容 API
 
 ```python
 import openai
 client = openai.OpenAI(base_url="http://localhost:7860/v1", api_key="local")
 client.chat.completions.create(
-    model="auto",  # auto = 使用检测到的模型
+    model="auto",
     messages=[{"role": "user", "content": "Hello!"}],
 )
 ```
 
 ---
 
-## 配置
-
-```bash
-# 环境变量
-MISER_MODEL=gemma4:latest  miser     # 指定模型
-MISER_PORT=8080             miser     # 自定义端口
-
-# CLI 参数
-miser --port 8080 --model mistral:7b --auth-token my-secret --log-format json
-```
-
----
-
-## Python 客户端
-
-```python
-from client import W
-
-W.outline("~/project/app.py")   # 函数/类结构
-W.grep("~/project/", "def fn")  # 搜索
-W.explain("~/project/utils.py") # 解释代码 (本地 LLM)
-W.test("~/project/utils.py")    # 生成测试 (本地 LLM)
-W.review("~/project/app.py")    # 代码审查 (本地 LLM)
-```
-
----
-
 ## 平台
 
-| 平台 | 启动方式 | 自动启动 |
-|------|---------|---------|
-| macOS | `./miser.sh` | `bash scripts/install.sh` → LaunchAgent |
-| Linux | `./miser.sh` | `bash scripts/install.sh` → systemd user service |
-| Windows | `miser.bat` (双击) | 手动 / Task Scheduler |
+| 平台 | MCP server | 开机自启 |
+|------|-----------|---------|
+| macOS | `python3 mcp_server.py` | `bash scripts/install.sh` → LaunchAgent |
+| Linux | `python3 mcp_server.py` | `bash scripts/install.sh` → systemd |
+| Windows | `python mcp_server.py` 或 `mcp_server.bat` | 手动 / Task Scheduler |
 
 ---
+
+## 要求
+
+- Python 3.10+
+- （可选）Ollama / LM Studio — 零 token 工具不需要
 
 ## License
 
