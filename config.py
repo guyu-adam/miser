@@ -1,6 +1,8 @@
 """
-config.py — Centralized configuration for Miser (Phase 2 #12).
+config.py — Centralized configuration for Miser v2.0.
 Single source of truth for all env vars, CLI args, and defaults.
+
+New in v2.0: model="auto" means auto-detect from available backends.
 """
 
 import os, argparse
@@ -10,15 +12,17 @@ from pathlib import Path
 
 DEFAULTS = {
     "port":         7860,
-    "model":        "qwen3.5:4b",
+    "model":        "auto",          # v2.0: "auto" = discover from backend
     "auth_token":   "",
     "log_format":   "text",
-    "embed_model":  "nomic-embed-text",
+    "embed_model":  "",              # v2.0: empty = skip embeddings if unavailable
     "max_queue":    10,
     "queue_timeout": 60,
     "rate_llm":     30,
     "rate_zero":    200,
     "max_body_mb":  5,
+    "host":         "0.0.0.0",       # v2.0: listen on all interfaces by default
+    "skip_wizard":  True,            # v2.0: wizard is inline, not separate script
 }
 
 # ── Load from environment ─────────────────────────────────────────────────────
@@ -26,6 +30,7 @@ DEFAULTS = {
 def from_env() -> dict:
     return {
         "port":         int(os.environ.get("MISER_PORT", DEFAULTS["port"])),
+        "host":         os.environ.get("MISER_HOST", DEFAULTS["host"]),
         "model":        os.environ.get("MISER_MODEL", DEFAULTS["model"]).strip(),
         "auth_token":   os.environ.get("MISER_AUTH_TOKEN", DEFAULTS["auth_token"]),
         "log_format":   os.environ.get("MISER_LOG_FORMAT", DEFAULTS["log_format"]),
@@ -37,24 +42,26 @@ def from_env() -> dict:
         "max_body_mb":  int(os.environ.get("MISER_MAX_BODY_MB", DEFAULTS["max_body_mb"])),
     }
 
-# ── CLI argument parsing (Phase 1 #8) ─────────────────────────────────────────
+# ── CLI argument parsing ──────────────────────────────────────────────────────
 
 def parse_cli(argv: list = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Miser — Save 98% API tokens with your local GPU",
+        description="Miser v2.0 — Zero-token local AI co-processor",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python miser.py
-  python miser.py --port 8080 --model mistral:7b
-  python miser.py --log-format json --auth-token my-secret
-  miser --version
+  miser                          # auto-detect backend + model
+  miser --port 8080              # custom port
+  miser --model gemma4:latest    # use specific model
+  miser --auth-token my-secret   # enable API auth
         """
     )
     parser.add_argument("--port", type=int, default=DEFAULTS["port"],
                         help=f"Listen port (default: {DEFAULTS['port']})")
+    parser.add_argument("--host", type=str, default=DEFAULTS["host"],
+                        help=f"Bind address (default: {DEFAULTS['host']})")
     parser.add_argument("--model", type=str, default=DEFAULTS["model"],
-                        help=f"Ollama model name (default: {DEFAULTS['model']})")
+                        help=f"Model name, or 'auto' to detect (default: auto)")
     parser.add_argument("--auth-token", type=str, default="",
                         help="API auth token (enables authentication)")
     parser.add_argument("--log-format", choices=["text", "json"],
@@ -68,21 +75,20 @@ Examples:
                         help=f"Zero-LLM endpoint rate limit per min (default: {DEFAULTS['rate_zero']})")
     parser.add_argument("--version", action="store_true",
                         help="Show version and exit")
-    parser.add_argument("--wizard", action="store_true",
-                        help="Run first-time setup wizard")
+    parser.add_argument("--setup", action="store_true",
+                        help="Run inline setup wizard (model download guide)")
 
     return parser.parse_args(argv)
 
 
 def resolve(argv: list = None) -> dict:
-    """Merge env vars + CLI args with CLI taking priority.
-    If argv is None, only uses env vars (safe for import by test runners)."""
+    """Merge env vars + CLI args with CLI taking priority."""
     cfg = from_env()
     cli = parse_cli(argv)
 
-    # CLI overrides env (only if explicitly provided or argv was passed)
     if argv is not None:
         cfg["port"] = cli.port if cli.port != DEFAULTS["port"] else cfg["port"]
+        cfg["host"] = cli.host if cli.host != DEFAULTS["host"] else cfg["host"]
         cfg["model"] = cli.model if cli.model != DEFAULTS["model"] else cfg["model"]
         cfg["auth_token"] = cli.auth_token or cfg["auth_token"]
         cfg["log_format"] = cli.log_format if cli.log_format != DEFAULTS["log_format"] else cfg["log_format"]

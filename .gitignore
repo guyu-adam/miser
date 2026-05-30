@@ -13,3 +13,4 @@ memory.json
 # macOS
 .DS_Store
 .miser_bootstrapped
+miser.log

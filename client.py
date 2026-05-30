@@ -1,32 +1,15 @@
 """
-Miser v1.2 client for Claude Code — with quality assurance.
+Miser v2.0 client for any agent — with quality assurance.
+Cross-platform: Windows, macOS, Linux.
 
 Usage:
-    import sys; sys.path.insert(0, '/path/to/miser')
     from client import W
 
-    W.outline("~/project/app.py")           # function/class map
-    W.grep("~/project/app.py", "def fn")    # search with context
-    W.tree("~/project", depth=2)            # directory tree
-    W.exists("~/project/.env")              # existence check
-    W.run("pytest --tb=short -q")           # shell command
-    W.explain("~/project/utils.py")         # plain-English explanation
-    W.fix("TypeError: None", code="...")    # error → fix
-    W.test("~/project/utils.py")            # generate pytest tests
-    W.review("~/project/utils.py")          # code review
-    W.codegen("write a debounce in python") # code generation
-    W.ask("any freeform task")              # general purpose
-    W.batch([("outline","~/f.py"),("run","git status")])
+    W.read("~/project/app.py")
+    W.grep("~/project/app.py", "def fn")
+    W.run("pytest --tb=short -q")
+    W.ask("any freeform task")
     W.status()
-    W.quality()                             # get last quality report
-    W.clear()
-
-Quality guarantees:
-  - Zero-LLM ops: 100% deterministic, no quality loss
-  - Local-LLM ops: auto-verified (hallucination, syntax, context, length)
-  - CRITICAL keywords (auth, security, payment, deploy) → Claude must handle
-  - Flagged results are prefixed [MISER:FLAG] — treat as hints, not facts
-  - Use W.verify = False to skip checks (not recommended for production code)
 """
 import ast, re, requests
 from quality import classify_op, should_offload, quality_report
@@ -242,7 +225,8 @@ class _W:
         return self._wrap(result, f"git:{path}", "git_summary", "miser-llm")
 
     def ensure_running(self, timeout: float = 10.0) -> bool:
-        """Auto-start miser if not running. Returns True when ready. (P0 #2)"""
+        """Auto-start miser if not running. Returns True when ready.
+        Cross-platform: Windows, macOS, Linux."""
         import subprocess, sys, time, os
         try:
             self.status()
@@ -256,8 +240,15 @@ class _W:
                     os.path.abspath(__file__))), "miser.py")
             except NameError:
                 miser_py = "miser.py"
+
+            # Windows: hide console window
+            kwargs = {}
+            if sys.platform == "win32":
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
             subprocess.Popen([sys.executable, miser_py],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             **kwargs)
             deadline = time.time() + timeout
             while time.time() < deadline:
                 time.sleep(0.5)

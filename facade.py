@@ -1,33 +1,32 @@
 """
-facade.py — OpenAI-compatible API facade for Miser v1.4.1 (Agent adaptation #6).
+facade.py — OpenAI-compatible API facade for Miser v2.0.
+Multi-backend support: Ollama, OpenAI-compat, auto-detected.
 
-Exposes a /v1/chat/completions endpoint that translates OpenAI-format
-requests into local Ollama calls. This single endpoint unlocks:
-  - Continue.dev
-  - LangChain (ChatOpenAI)
-  - CrewAI
-  - AutoGPT
-  - Any tool that speaks OpenAI API format
+Exposes:
+  /v1/chat/completions   — OpenAI-format chat
+  /v1/models             — model list
+
+Unlocks: Continue.dev, LangChain, CrewAI, AutoGPT, Cursor, Windsurf, etc.
 """
 
 import json, re, time
 from flask import Blueprint, request, jsonify, Response, stream_with_context
+import requests as req
 
 from model_adapter import ModelAdapter
-from breaker import ollama_breaker, BreakerOpenError
-
-import requests as req
 
 facade = Blueprint("facade", __name__)
 
 MODEL = None
 ADAPTER = None
+BACKEND = None
 
 
-def set_facade_model(model_name: str, adapter: ModelAdapter):
-    global MODEL, ADAPTER
+def set_facade_model(model_name: str, adapter=None, backend=None):
+    global MODEL, ADAPTER, BACKEND
     MODEL = model_name
     ADAPTER = adapter
+    BACKEND = backend
 
 
 @facade.route("/chat/completions", methods=["POST"])
@@ -58,12 +57,17 @@ def chat_completions():
     if stream:
         return _stream_response(system, user, max_tokens, d.get("model", MODEL))
 
-    # Non-streaming: call Ollama and translate response
+    # Non-streaming: use backend for generation
     try:
-        payload = ADAPTER.generate_payload(system, user, max_tokens=max_tokens)
-        resp = req.post(ADAPTER.url, json=payload, timeout=120)
-        raw = ADAPTER.extract_text(resp.json())
-        answer = ADAPTER.clean(raw, mode="text")
+        if BACKEND is not None:
+            answer = BACKEND.generate(MODEL, system, user, max_tokens=max_tokens)
+        elif ADAPTER is not None:
+            payload = ADAPTER.generate_payload(system, user, max_tokens=max_tokens)
+            resp = req.post(ADAPTER.url, json=payload, timeout=120)
+            raw = ADAPTER.extract_text(resp.json())
+            answer = ADAPTER.clean(raw, mode="text")
+        else:
+            return jsonify({"error": {"message": "No LLM backend configured", "type": "api_error"}}), 503
 
         return jsonify({
             "id": f"chatcmpl-{int(time.time())}",
