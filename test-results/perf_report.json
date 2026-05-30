@@ -1,0 +1,46 @@
+{
+  "version": "1.5.0",
+  "project_stats": {
+    "base_dir": "/var/folders/v2/bzy3ylv136s9ndfzmzzdzf880000gn/T/miser_perf_m1syrqsx",
+    "files": 20,
+    "total_bytes": 13622,
+    "total_lines": 389
+  },
+  "operations": {
+    "outline": {
+      "cpu_ms": 0.0,
+      "wall_ms": 0.04316697595641017,
+      "tokens_direct": 173,
+      "tokens_miser": 62,
+      "savings_pct": 0.6416184971098265
+    },
+    "grep": {
+      "cpu_ms": 0.0,
+      "wall_ms": 0.029332994017750025,
+      "tokens_direct": 117,
+      "tokens_miser": 6,
+      "savings_pct": 0.9487179487179487
+    },
+    "tree": {
+      "cpu_ms": 0.0,
+      "wall_ms": 0.20833400776609778,
+      "tokens_direct": 455,
+      "tokens_miser": 97,
+      "savings_pct": 0.7868131868131868
+    },
+    "read_targeted": {
+      "cpu_ms": 0.0,
+      "wall_ms": 0.03412499791011214,
+      "tokens_direct": 173,
+      "tokens_miser": 173,
+      "savings_pct": 0.0
+    }
+  },
+  "composite": {
+    "total_cpu_ms": 0.0,
+    "total_tokens_saved": 580,
+    "overall_savings_pct": 63.2,
+    "perf_cost_cpu_ms_per_1k_tokens": 0.0,
+    "perf_efficiency_tokens_per_cpu_ms": 580000.0
+  }
+}
