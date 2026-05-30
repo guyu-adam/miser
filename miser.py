@@ -18,6 +18,24 @@ if sys.platform == "win32":
 os.environ["NO_PROXY"] = "localhost,127.0.0.1"
 os.environ["no_proxy"] = "localhost,127.0.0.1"
 
+# ── Dependency self-check (v2.0: fail gracefully with fix instructions) ─────
+
+def _check_deps():
+    """Check required packages. Print install hint if missing."""
+    missing = []
+    for pkg in ("flask", "rich", "requests"):
+        try:
+            __import__(pkg)
+        except ImportError:
+            missing.append(pkg)
+    if missing:
+        pkgs = " ".join(missing)
+        print(f"\n  Missing packages: {pkgs}")
+        print(f"  Fix: pip install {pkgs}\n")
+        sys.exit(1)
+
+_check_deps()
+
 import requests as req
 from flask import Flask, request, jsonify
 from rich.console import Console
@@ -655,16 +673,23 @@ if __name__ == "__main__":
         console.print()
         console.print("[red]No local LLM backend found![/red]")
         console.print()
-        if cli.setup:
-            console.print("[yellow]Setup guide:[/yellow]")
-            console.print("  1. Install Ollama:  https://ollama.com")
-            console.print("  2. Pull a model:     ollama pull gemma4:latest")
-            console.print("  3. Start Miser:      python miser.py")
-            sys.exit(1)
-        console.print("[dim]Zero-LLM endpoints (/read, /grep, /run, etc.) are still available.[/dim]")
-        console.print("[dim]Start without LLM: set MISER_NO_LLM=1[/dim]")
+        console.print("[yellow]Quick start - pick one:[/yellow]")
         console.print()
-        # Continue in zero-only mode
+        console.print("  [bold]Option A: Ollama[/bold] (recommended, easiest)")
+        console.print("    1. Download: https://ollama.com")
+        console.print("    2. Install and run: ollama serve")
+        console.print("    3. Pull a model:   ollama pull gemma4:latest")
+        console.print("    4. Restart Miser:  python miser.py")
+        console.print()
+        console.print("  [bold]Option B: LM Studio[/bold] (GUI)")
+        console.print("    1. Download: https://lmstudio.ai")
+        console.print("    2. Download any model in the app")
+        console.print("    3. Start the local server (port 1234)")
+        console.print("    4. Restart Miser:  python miser.py")
+        console.print()
+        console.print("[dim]Zero-LLM endpoints (/read, /grep, /run, etc.) work without a model.[/dim]")
+        console.print("[dim]Add --setup to see this guide again.[/dim]")
+        console.print()
         NO_LLM = True
     else:
         NO_LLM = False

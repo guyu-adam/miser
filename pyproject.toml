@@ -4,14 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "miser"
-version = "2.0.0"
-description = "Zero-token local AI co-processor — auto-detects any local LLM"
+version = "2.0.1"
+description = "Zero-token local AI co-processor - auto-detects any local LLM"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
-authors = [
-    {name = "guyu-adam"},
-]
+authors = [{name = "guyu-adam"}]
 keywords = ["llm", "local", "mcp", "ollama", "agent", "zero-token"]
 
 [project.scripts]
@@ -28,5 +26,6 @@ full = [
 Homepage = "https://github.com/guyu-adam/miser"
 Issues = "https://github.com/guyu-adam/miser/issues"
 
-[tool.setuptools.packages.find]
-include = ["miser*", "backends*", "routes*", "scripts*"]
+[tool.setuptools]
+py-modules = ["miser"]
+packages = ["backends", "routes", "scripts"]
