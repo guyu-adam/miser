@@ -771,7 +771,7 @@ class TestLLMPerformanceLatency:
 
     def test_basic_response_under_30s(self):
         """A simple question should get a response within 30 seconds."""
-        r = call_llm(MODELS[0], "What is 2+2? Reply with just the number.", num_predict=100)
+        r = call_llm(MODELS[0], "What is 2+2? Reply with just the number.", num_predict=200)
         assert "error" not in r, r.get("error")
         total_ms = r.get("total_ms", 0)
         assert isinstance(total_ms, (int, float)) and total_ms < 30000, f"Too slow: {total_ms}ms"
@@ -781,8 +781,8 @@ class TestLLMPerformanceLatency:
     def test_ttft_under_5s(self):
         """Time to first content token should be under 5s for warm model."""
         # Warm up first
-        call_llm(MODELS[0], "say hi", num_predict=10)
-        r = call_llm(MODELS[0], "What is 2+2? Reply with just the number.", num_predict=50)
+        call_llm(MODELS[0], "say hi", num_predict=50)
+        r = call_llm(MODELS[0], "What is 2+2? Reply with just the number.", num_predict=100)
         assert "error" not in r, r.get("error")
         ttft = r.get("ttft_ms")
         if ttft is not None:
@@ -794,8 +794,8 @@ class TestLLMPerformanceVariance:
 
     def test_deterministic_output(self):
         """At temperature=0, two runs should produce identical or near-identical output."""
-        r1 = call_llm(MODELS[0], "What is 2+2? Reply with just the number.", num_predict=50)
-        r2 = call_llm(MODELS[0], "What is 2+2? Reply with just the number.", num_predict=50)
+        r1 = call_llm(MODELS[0], "What is 2+2? Reply with just the number.", num_predict=200)
+        r2 = call_llm(MODELS[0], "What is 2+2? Reply with just the number.", num_predict=200)
         assert "error" not in r1, r1.get("error")
         assert "error" not in r2, r2.get("error")
         # Response should contain "4"
