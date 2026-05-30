@@ -90,7 +90,9 @@ def detect_family(model_name: str) -> str:
         return "phi4"
     if re.search(r'phi-?3|phi3', n):
         return "phi3"
-    # Gemma family (2024-2026: 2, 3)
+    # Gemma family (2024-2026: 2, 3, 4)
+    if re.search(r'gemma-?4|gemma4', n):
+        return "gemma4"       # v2026: uses built-in chat template via /api/chat
     if re.search(r'gemma-?3|gemma3', n):
         return "gemma"
     if re.search(r'gemma-?2|gemma2', n):
@@ -190,7 +192,7 @@ def build_prompt(family: str, system: str, user: str) -> str:
     if family == "gemma":
         sys_part = f"<start_of_turn>system\n{system}<end_of_turn>\n" if system else ""
         return (
-            f"{sys_part}"
+            f"<bos>{sys_part}"
             f"<start_of_turn>user\n{user}<end_of_turn>\n"
             f"<start_of_turn>model\n"
         )
