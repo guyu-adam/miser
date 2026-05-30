@@ -1,5 +1,5 @@
 """
-facade.py - OpenAI-compatible API facade for Miser v2.0.
+facade.py - OpenAI-compatible API facade for Miser v1.5.
 Multi-backend support: Ollama, OpenAI-compat, auto-detected.
 
 Exposes:

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Miser MCP Server v2.0 launcher for macOS / Linux.
+# Miser MCP Server v1.5 launcher for macOS / Linux.
 # Usage: ./mcp_server.sh
 #        MISER_URL=http://localhost:7860 ./mcp_server.sh
 set -euo pipefail

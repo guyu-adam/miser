@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "miser"
-version = "2.0.2"
+version = "1.5.0"
 description = "Zero-token local AI co-processor - auto-detects any local LLM"
 readme = "README.md"
 license = {text = "MIT"}

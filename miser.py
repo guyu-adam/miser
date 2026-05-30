@@ -1,5 +1,5 @@
 """
-Miser v2.0 - Zero-token local AI co-processor.
+Miser v1.5 - Zero-token local AI co-processor.
 Auto-detects any local LLM (Ollama, LM Studio, llama.cpp, vLLM, etc.).
 Two execution paths:
   1. Zero-LLM (<50ms): shell, file read/write/grep/tree/exists/outline/patch
@@ -18,7 +18,7 @@ if sys.platform == "win32":
 os.environ["NO_PROXY"] = "localhost,127.0.0.1"
 os.environ["no_proxy"] = "localhost,127.0.0.1"
 
-# ── Dependency self-check (v2.0: fail gracefully with fix instructions) ─────
+# ── Dependency self-check (v1.5: fail gracefully with fix instructions) ─────
 
 def _check_deps():
     """Check required packages. Print install hint if missing."""
@@ -636,7 +636,7 @@ def note():
     return jsonify({"saved": {key: val}})
 
 # ── main ─────────────────────────────────────────────────────────────────────────
-# ── v2.0: auto-detect backend + model on startup ───────────────────────────────
+# ── v1.5: auto-detect backend + model on startup ───────────────────────────────
 
 def main():
     """Entry point for 'miser' CLI command (pip install).
@@ -657,12 +657,12 @@ def main():
 
     cli = cli_cfg["_cli"]
     if cli.version:
-        print("Miser v2.0.2")
+        print("Miser v1.5.0")
         _sys.exit(0)
 
     # ── Auto-discovery ───────────────────────────────────────────────────
     console.print()
-    console.print(Panel("[bold cyan]Miser v2.0[/bold cyan] - Auto-detecting local LLM...",
+    console.print(Panel("[bold cyan]Miser v1.5[/bold cyan] - Auto-detecting local LLM...",
                         border_style="cyan"))
 
     from backends import discover_backend
@@ -731,7 +731,7 @@ def main():
                 "level":      record.levelname,
                 "message":    record.getMessage(),
                 "module":     record.name,
-                "version":    "2.0.2",
+                "version":    "1.5.0",
             }
             if record.exc_info and record.exc_info[0]:
                 import traceback
@@ -748,7 +748,7 @@ def main():
             h.setFormatter(fmt)
 
     _log.basicConfig(level=_log.INFO, handlers=handlers, force=True)
-    _log.info(f"Miser v2.0.2 port={PORT} model={MODEL} backend={backend.name if backend else 'none'}")
+    _log.info(f"Miser v1.5.0 port={PORT} model={MODEL} backend={backend.name if backend else 'none'}")
 
     # Register security middleware
     app.before_request(rate_limit_middleware)
@@ -803,7 +803,7 @@ def main():
     model_note  = MODEL if not NO_LLM else "[yellow]none (zero-LLM only)[/yellow]"
 
     console.print(Panel(
-        "[bold cyan]Miser v2.0[/bold cyan]  *  Agent-agnostic local co-processor\n\n"
+        "[bold cyan]Miser v1.5[/bold cyan]  *  Agent-agnostic local co-processor\n\n"
         "[bold]Zero-LLM endpoints (<50ms):[/bold]\n"
         "  [green]/read /grep /outline /tree /exists /run /write /patch[/green]\n\n"
         "[bold]Local-LLM endpoints (0 API tokens):[/bold]\n"

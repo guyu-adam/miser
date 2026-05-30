@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Miser v2.0 launcher for macOS / Linux
+# Miser v1.5 launcher for macOS / Linux
 # Usage: ./miser.sh [--port 7860] [--host 0.0.0.0]
 
 cd "$(dirname "$0")"

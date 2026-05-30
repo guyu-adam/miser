@@ -1,8 +1,8 @@
 """
-config.py - Centralized configuration for Miser v2.0.
+config.py - Centralized configuration for Miser v1.5.
 Single source of truth for all env vars, CLI args, and defaults.
 
-New in v2.0: model="auto" means auto-detect from available backends.
+New in v1.5: model="auto" means auto-detect from available backends.
 """
 
 import os, argparse
@@ -12,17 +12,17 @@ from pathlib import Path
 
 DEFAULTS = {
     "port":         7860,
-    "model":        "auto",          # v2.0: "auto" = discover from backend
+    "model":        "auto",          # v1.5: "auto" = discover from backend
     "auth_token":   "",
     "log_format":   "text",
-    "embed_model":  "",              # v2.0: empty = skip embeddings if unavailable
+    "embed_model":  "",              # v1.5: empty = skip embeddings if unavailable
     "max_queue":    10,
     "queue_timeout": 60,
     "rate_llm":     30,
     "rate_zero":    200,
     "max_body_mb":  5,
-    "host":         "0.0.0.0",       # v2.0: listen on all interfaces by default
-    "skip_wizard":  True,            # v2.0: wizard is inline, not separate script
+    "host":         "0.0.0.0",       # v1.5: listen on all interfaces by default
+    "skip_wizard":  True,            # v1.5: wizard is inline, not separate script
 }
 
 # ── Load from environment ─────────────────────────────────────────────────────
@@ -46,7 +46,7 @@ def from_env() -> dict:
 
 def parse_cli(argv: list = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Miser v2.0 - Zero-token local AI co-processor",
+        description="Miser v1.5 - Zero-token local AI co-processor",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

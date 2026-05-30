@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Miser v2.0 installer.
+# Miser v1.5 installer.
 # Installs Python deps, optionally pulls a model, sets up auto-start.
 #
 # Usage:  bash scripts/install.sh
@@ -14,7 +14,7 @@ red()    { echo -e "\033[31m$*\033[0m"; }
 bold()   { echo -e "\033[1m$*\033[0m"; }
 
 bold "=========================================="
-bold "   Miser v2.0  --  Installer"
+bold "   Miser v1.5  --  Installer"
 bold "=========================================="
 echo ""
 
@@ -71,7 +71,7 @@ elif [[ "$OS" == "Linux" ]]; then
     mkdir -p "$SERVICE_DIR"
     cat > "$SERVICE_DIR/miser.service" << UNIT_EOF
 [Unit]
-Description=Miser v2.0 Local AI Co-processor
+Description=Miser v1.5 Local AI Co-processor
 After=network.target
 
 [Service]
@@ -94,7 +94,7 @@ fi
 # ── 5. Done ───────────────────────────────────────────────────────────────
 echo ""
 bold "=========================================="
-bold "   Miser v2.0 installed successfully"
+bold "   Miser v1.5 installed successfully"
 bold "=========================================="
 echo "  Start  : miser"
 echo "  Server : http://localhost:7860"

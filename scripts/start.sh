@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Miser v2.0 launcher script.
+# Miser v1.5 launcher script.
 # Auto-detects backend + model. No hardcoded model name.
 #
 # Usage:
@@ -51,7 +51,7 @@ fi
 
 # ── launch ────────────────────────────────────────────────────────────────
 PYTHON="${PYTHON:-python3}"
-yellow "Starting Miser v2.0 (auto-detecting backend + model)..."
+yellow "Starting Miser v1.5 (auto-detecting backend + model)..."
 cd "$MISER_DIR"
 
 MODEL_ARG=""

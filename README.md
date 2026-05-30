@@ -1,4 +1,4 @@
-# Miser v2.0 — 零 Token 本地 AI 协处理器
+# Miser v1.5 — 零 Token 本地 AI 协处理器
 
 **把你的本地 GPU 变成 AI 助手的外挂。零 API token，零延迟，零配置。**
 
