@@ -1,0 +1,420 @@
+{
+  "results": {
+    "gemma4:latest": {
+      "coding": [
+        {
+          "task_id": "fib",
+          "scores": [
+            1.0,
+            1.0
+          ],
+          "avg_score": 1.0,
+          "std_score": 0.0,
+          "latencies_ms": [
+            22583.9,
+            23979.5
+          ],
+          "avg_latency_ms": 23281.7,
+          "details": [
+            "4/4 tests passed",
+            "4/4 tests passed"
+          ],
+          "runs": []
+        },
+        {
+          "task_id": "is_prime",
+          "scores": [
+            1.0,
+            1.0
+          ],
+          "avg_score": 1.0,
+          "std_score": 0.0,
+          "latencies_ms": [
+            19390.4,
+            21659.0
+          ],
+          "avg_latency_ms": 20524.7,
+          "details": [
+            "5/5 tests passed",
+            "5/5 tests passed"
+          ],
+          "runs": []
+        },
+        {
+          "task_id": "reverse_words",
+          "scores": [
+            1.0,
+            1.0
+          ],
+          "avg_score": 1.0,
+          "std_score": 0.0,
+          "latencies_ms": [
+            18174.7,
+            18241.8
+          ],
+          "avg_latency_ms": 18208.2,
+          "details": [
+            "4/4 tests passed",
+            "4/4 tests passed"
+          ],
+          "runs": []
+        },
+        {
+          "task_id": "count_vowels",
+          "scores": [
+            1.0,
+            1.0
+          ],
+          "avg_score": 1.0,
+          "std_score": 0.0,
+          "latencies_ms": [
+            14174.4,
+            16871.6
+          ],
+          "avg_latency_ms": 15523.0,
+          "details": [
+            "4/4 tests passed",
+            "4/4 tests passed"
+          ],
+          "runs": []
+        },
+        {
+          "task_id": "merge_sorted",
+          "scores": [
+            0.0,
+            1.0
+          ],
+          "avg_score": 0.5,
+          "std_score": 0.707,
+          "latencies_ms": [
+            24409.6,
+            22324.1
+          ],
+          "avg_latency_ms": 23366.8,
+          "details": [
+            "0/4 tests passed",
+            "4/4 tests passed"
+          ],
+          "runs": []
+        }
+      ],
+      "reasoning": [
+        {
+          "task_id": "simple_math",
+          "scores": [
+            1.0,
+            1.0
+          ],
+          "avg_score": 1.0,
+          "std_score": 0.0,
+          "latencies_ms": [
+            1404.3,
+            1376.3
+          ],
+          "avg_latency_ms": 1390.3,
+          "details": [
+            "matched '17'",
+            "matched '17'"
+          ],
+          "runs": []
+        },
+        {
+          "task_id": "logic_height",
+          "scores": [
+            1.0,
+            1.0
+          ],
+          "avg_score": 1.0,
+          "std_score": 0.0,
+          "latencies_ms": [
+            254.4,
+            242.0
+          ],
+          "avg_latency_ms": 248.2,
+          "details": [
+            "matched 'alice'",
+            "matched 'alice'"
+          ],
+          "runs": []
+        },
+        {
+          "task_id": "sequence_next",
+          "scores": [
+            1.0,
+            1.0
+          ],
+          "avg_score": 1.0,
+          "std_score": 0.0,
+          "latencies_ms": [
+            269.1,
+            252.7
+          ],
+          "avg_latency_ms": 260.9,
+          "details": [
+            "matched '42'",
+            "matched '42'"
+          ],
+          "runs": []
+        },
+        {
+          "task_id": "time_calc",
+          "scores": [
+            1.0,
+            1.0
+          ],
+          "avg_score": 1.0,
+          "std_score": 0.0,
+          "latencies_ms": [
+            4219.5,
+            4241.8
+          ],
+          "avg_latency_ms": 4230.6,
+          "details": [
+            "matched '12:00'",
+            "matched '12:00'"
+          ],
+          "runs": []
+        },
+        {
+          "task_id": "percentage",
+          "scores": [
+            1.0,
+            1.0
+          ],
+          "avg_score": 1.0,
+          "std_score": 0.0,
+          "latencies_ms": [
+            2543.2,
+            2544.0
+          ],
+          "avg_latency_ms": 2543.6,
+          "details": [
+            "matched '54'",
+            "matched '54'"
+          ],
+          "runs": []
+        }
+      ],
+      "factual": [
+        {
+          "task_id": "capital_france",
+          "scores": [
+            1.0,
+            1.0
+          ],
+          "avg_score": 1.0,
+          "std_score": 0.0,
+          "latencies_ms": [
+            242.0,
+            222.5
+          ],
+          "avg_latency_ms": 232.2,
+          "details": [
+            "matched 'paris'",
+            "matched 'paris'"
+          ],
+          "runs": []
+        },
+        {
+          "task_id": "element_au",
+          "scores": [
+            1.0,
+            1.0
+          ],
+          "avg_score": 1.0,
+          "std_score": 0.0,
+          "latencies_ms": [
+            266.3,
+            240.6
+          ],
+          "avg_latency_ms": 253.4,
+          "details": [
+            "matched 'gold'",
+            "matched 'gold'"
+          ],
+          "runs": []
+        },
+        {
+          "task_id": "speed_of_light",
+          "scores": [
+            1.0,
+            1.0
+          ],
+          "avg_score": 1.0,
+          "std_score": 0.0,
+          "latencies_ms": [
+            291.7,
+            266.4
+          ],
+          "avg_latency_ms": 279.0,
+          "details": [
+            "matched 299792 (precise)",
+            "matched 299792 (precise)"
+          ],
+          "runs": []
+        },
+        {
+          "task_id": "python_year",
+          "scores": [
+            1.0,
+            1.0
+          ],
+          "avg_score": 1.0,
+          "std_score": 0.0,
+          "latencies_ms": [
+            3117.0,
+            3091.2
+          ],
+          "avg_latency_ms": 3104.1,
+          "details": [
+            "matched '1991'",
+            "matched '1991'"
+          ],
+          "runs": []
+        }
+      ],
+      "instruction": [
+        {
+          "task_id": "json_format",
+          "scores": [
+            1.0,
+            1.0
+          ],
+          "avg_score": 1.0,
+          "std_score": 0.0,
+          "latencies_ms": [
+            394.5,
+            313.5
+          ],
+          "avg_latency_ms": 354.0,
+          "details": [
+            "check PASS",
+            "check PASS"
+          ],
+          "runs": []
+        },
+        {
+          "task_id": "no_markdown",
+          "scores": [
+            1.0,
+            1.0
+          ],
+          "avg_score": 1.0,
+          "std_score": 0.0,
+          "latencies_ms": [
+            274.2,
+            267.3
+          ],
+          "avg_latency_ms": 270.8,
+          "details": [
+            "check PASS",
+            "check PASS"
+          ],
+          "runs": []
+        },
+        {
+          "task_id": "uppercase",
+          "scores": [
+            1.0,
+            1.0
+          ],
+          "avg_score": 1.0,
+          "std_score": 0.0,
+          "latencies_ms": [
+            339.1,
+            351.1
+          ],
+          "avg_latency_ms": 345.1,
+          "details": [
+            "check PASS",
+            "check PASS"
+          ],
+          "runs": []
+        },
+        {
+          "task_id": "count_words",
+          "scores": [
+            1.0,
+            1.0
+          ],
+          "avg_score": 1.0,
+          "std_score": 0.0,
+          "latencies_ms": [
+            250.6,
+            235.4
+          ],
+          "avg_latency_ms": 243.0,
+          "details": [
+            "matched '5'",
+            "matched '5'"
+          ],
+          "runs": []
+        }
+      ]
+    }
+  },
+  "p_losses": {
+    "gemma4:latest": {
+      "accuracy": 0.975,
+      "avg_latency_ms": 5796.5,
+      "avg_variance": 0.035,
+      "by_category": {
+        "coding": {
+          "accuracy": 0.9,
+          "cloud_accuracy": 0.92,
+          "acc_loss": 0.022,
+          "avg_latency_ms": 20180.9,
+          "lat_penalty": 1.0,
+          "avg_variance": 0.141,
+          "var_penalty": 0.424,
+          "p_loss": 0.396
+        },
+        "reasoning": {
+          "accuracy": 1.0,
+          "cloud_accuracy": 0.95,
+          "acc_loss": 0,
+          "avg_latency_ms": 1734.7,
+          "lat_penalty": 0.082,
+          "avg_variance": 0.0,
+          "var_penalty": 0.0,
+          "p_loss": 0.024
+        },
+        "factual": {
+          "accuracy": 1.0,
+          "cloud_accuracy": 0.98,
+          "acc_loss": 0.0,
+          "avg_latency_ms": 967.2,
+          "lat_penalty": 0,
+          "avg_variance": 0.0,
+          "var_penalty": 0.0,
+          "p_loss": 0.0
+        },
+        "instruction": {
+          "accuracy": 1.0,
+          "cloud_accuracy": 0.9,
+          "acc_loss": 0,
+          "avg_latency_ms": 303.2,
+          "lat_penalty": 0,
+          "avg_variance": 0.0,
+          "var_penalty": 0.0,
+          "p_loss": 0.0
+        }
+      },
+      "p_loss": 0.105
+    }
+  },
+  "config": {
+    "models": [
+      "gemma4:latest"
+    ],
+    "repetitions": 3,
+    "num_predict": 500,
+    "temperature": 0.0,
+    "cloud_baselines": {
+      "coding": 0.92,
+      "reasoning": 0.95,
+      "factual": 0.98,
+      "instruction": 0.9
+    }
+  }
+}

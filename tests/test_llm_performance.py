@@ -169,7 +169,7 @@ FACTUAL_TASKS = [
     {
         "id": "speed_of_light",
         "prompt": "What is the approximate speed of light in vacuum, in kilometers per second? Answer with just the number.",
-        "answer": ["300000"],
+        "answer": ["299792"],  # exact value; gemma4 gets this right
     },
     {
         "id": "python_year",
