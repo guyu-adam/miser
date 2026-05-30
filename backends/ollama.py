@@ -24,6 +24,7 @@ class OllamaBackend:
         elif not raw.startswith("http"):
             raw = f"http://{raw}"
         self._base_url = raw
+        self._adapters: dict = {}  # cache ModelAdapter per model
 
     @property
     def base_url(self) -> str:
@@ -45,8 +46,11 @@ class OllamaBackend:
 
     def generate(self, model: str, system: str, user: str,
                  max_tokens: int = 600, temperature: float = 0.2) -> str:
-        from model_adapter import ModelAdapter
-        adapter = ModelAdapter(model)
+        # Reuse cached adapter — ModelAdapter.__init__ hits /api/show
+        if model not in self._adapters:
+            from model_adapter import ModelAdapter
+            self._adapters[model] = ModelAdapter(model)
+        adapter = self._adapters[model]
         payload = adapter.generate_payload(system, user, max_tokens, temperature)
         resp = req.post(adapter.url, json=payload, timeout=240)
         raw = adapter.extract_text(resp.json())

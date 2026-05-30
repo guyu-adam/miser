@@ -329,7 +329,12 @@ def grep():
     ts = datetime.now().strftime("%H:%M:%S")
     console.print(Rule(f"[green]grep  {ts}[/green]"))
     result = grep_file(path, pattern, d.get("context", 2), d.get("ignore_case", True))
-    count_saved(len(read_file(path, 99999)) - len(result))
+    # Use Path.stat() for file size instead of reading the whole file
+    try:
+        fsize = Path(os.path.expanduser(path)).stat().st_size
+    except OSError:
+        fsize = 0
+    count_saved(fsize - len(result))
     return jsonify({"matches": result, "path": path, "pattern": pattern})
 
 @app.route("/outline", methods=["POST"])
@@ -340,7 +345,11 @@ def outline():
     ts = datetime.now().strftime("%H:%M:%S")
     console.print(Rule(f"[green]outline  {ts}[/green]"))
     result = outline_file(path)
-    count_saved(len(read_file(path, 99999)) - len(result))
+    try:
+        fsize = Path(os.path.expanduser(path)).stat().st_size
+    except OSError:
+        fsize = 0
+    count_saved(fsize - len(result))
     observe_access(path)
     console.print(f"[dim]{result[:400]}[/dim]")
     return jsonify({"outline": result, "path": path})

@@ -46,9 +46,10 @@ class TestMemorySaveLoad:
 class TestMemoryRecord:
     def test_record_adds_to_history(self):
         m = Memory()
-        start_count = len(m.history)
+        m.clear()  # reset to empty
+        assert len(m.history) == 0
         m.record(9999, "task one", "result one")
-        assert len(m.history) == start_count + 1
+        assert len(m.history) == 1
         assert m.history[-1]["task"] == "task one"
 
     def test_record_truncates_long_content(self):

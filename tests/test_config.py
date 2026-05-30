@@ -7,7 +7,7 @@ class TestFromEnv:
     def test_defaults_used_when_no_env(self):
         cfg = from_env()
         assert cfg["port"] == 7860
-        assert cfg["model"] == "qwen3.5:4b"
+        assert cfg["model"] == "auto"  # v1.5: default is auto-detect
         assert cfg["log_format"] == "text"
 
     def test_env_override(self, monkeypatch):
@@ -25,9 +25,9 @@ class TestParseCLI:
         cli = parse_cli(["--version"])
         assert cli.version is True
 
-    def test_wizard_flag(self):
-        cli = parse_cli(["--wizard"])
-        assert cli.wizard is True
+    def test_setup_flag(self):
+        cli = parse_cli(["--setup"])
+        assert cli.setup is True
 
     def test_port_override(self):
         cli = parse_cli(["--port", "8080"])

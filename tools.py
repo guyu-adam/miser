@@ -153,7 +153,7 @@ _OUTLINE_PATTERNS = {
     ".tsx": [(r"^(\s*)(function |class |const |interface |type |export (?:default )?(?:function |class |const ))(\w+)", "tsx")],
     ".go":  [(r"^(\s*)(func |type |var |const )(\w+)", "go")],
     ".rs":  [(r"^(\s*)(fn |pub fn |struct |enum |trait |impl |mod |const |type )(\w+)", "rs")],
-    ".java":[(r"^(\s*)(public |private |protected )?(class |interface |enum |@\w+\n\s*)?(\w+)", "java")],
+    ".java":[(r"^(\s*)(public\s+|private\s+|protected\s+)?(class|interface|enum)\s+(\w+)", "java")],
     ".rb":  [(r"^(\s*)(def |class |module |attr_)(\w+)", "rb")],
     ".sh":  [(r"^(\s*)(\w+\(\)|function \w+)", "sh")],
     ".sql": [(r"^(?i)(CREATE (?:TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|TRIGGER) )(\w+)", "sql")],
@@ -184,10 +184,13 @@ def outline_file(path: str) -> str:
             m = re.match(regex, line)
             if m:
                 indent = len(m.group(1) or "") // 4
-                # Extract kind and name from match groups
+                # Extract kind and name from match groups, guarding against None
                 all_groups = m.groups()
-                kind = all_groups[-2].strip() if len(all_groups) >= 3 else ""
-                name = all_groups[-1]
+                if len(all_groups) >= 3:
+                    kind = (all_groups[-2] or "").strip()
+                else:
+                    kind = ""
+                name = (all_groups[-1] or "").strip()
                 doc = ""
                 if i + 1 < len(lines):
                     dl = lines[i + 1].strip()
@@ -212,9 +215,10 @@ def patch_file(path: str, old: str, new: str) -> str:
     count = text.count(old)
     if count == 0:
         return f"Pattern not found in {path}"
-    updated = text.replace(old, new, 1)
+    # Replace ALL occurrences — agent may need to fix every instance
+    updated = text.replace(old, new)
     p.write_text(updated)
-    return f"Patched {path}: replaced 1/{count} occurrence(s), {len(old)}→{len(new)} chars"
+    return f"Patched {path}: replaced {count} occurrence(s), {len(old)}→{len(new)} chars"
 
 # ── path extraction (review item #5) ────────────────────────────────────────────
 

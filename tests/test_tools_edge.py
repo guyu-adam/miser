@@ -150,7 +150,7 @@ class TestPatchEdge:
         tf.write("aaa bbb aaa")
         tf.close()
         result = tools.patch_file(tf.name, "aaa", "xxx")
-        assert "1/2" in result  # replaced 1 of 2
+        assert "2 occurrence" in result  # v1.5.1: replace ALL occurrences
         os.unlink(tf.name)
 
     def test_patch_not_found(self):

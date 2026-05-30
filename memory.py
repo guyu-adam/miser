@@ -72,19 +72,19 @@ class Memory:
 
     def save(self, key: str, val: str):
         with self._lock:
-            self._load()
             self.notes[key] = val
-            # Cap notes size: evict oldest entries when over MAX_NOTES
-            if len(self.notes) > MAX_NOTES:
-                oldest = sorted(self.notes.keys(),
-                                key=lambda k: len(self.notes) if isinstance(self.notes, dict) else 0)[:len(self.notes) - MAX_NOTES]
-                for k in oldest:
-                    del self.notes[k]
+            # Cap notes size: keep only the most recent MAX_NOTES entries.
+            # dicts preserve insertion order in Python 3.7+, so simply
+            # pop the oldest (first) keys until we're within bounds.
+            while len(self.notes) > MAX_NOTES:
+                oldest_key = next(iter(self.notes))
+                del self.notes[oldest_key]
             self._save()
 
     def record(self, tid: int, task: str, result: str):
         with self._lock:
-            self._load()
+            # Don't _load() here — it discards in-memory changes from
+            # other threads. We already loaded in __init__.
             self.history.append({
                 "id": tid,
                 "time": datetime.now().strftime("%m-%d %H:%M"),
