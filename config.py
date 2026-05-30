@@ -26,7 +26,7 @@ DEFAULTS = {
 def from_env() -> dict:
     return {
         "port":         int(os.environ.get("MISER_PORT", DEFAULTS["port"])),
-        "model":        os.environ.get("MISER_MODEL", DEFAULTS["model"]),
+        "model":        os.environ.get("MISER_MODEL", DEFAULTS["model"]).strip(),
         "auth_token":   os.environ.get("MISER_AUTH_TOKEN", DEFAULTS["auth_token"]),
         "log_format":   os.environ.get("MISER_LOG_FORMAT", DEFAULTS["log_format"]),
         "embed_model":  os.environ.get("MISER_EMBED_MODEL", DEFAULTS["embed_model"]),

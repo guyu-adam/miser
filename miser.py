@@ -9,6 +9,11 @@ import os, re, threading, time, signal, uuid, sys
 from datetime import datetime
 from pathlib import Path
 
+# Windows: force UTF-8 to prevent GBK encoding errors with emoji/special chars
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 os.environ["NO_PROXY"] = "localhost,127.0.0.1"
 os.environ["no_proxy"] = "localhost,127.0.0.1"
 
@@ -629,8 +634,10 @@ if __name__ == "__main__":
         sys.exit(0)
 
     # P0 #3 fix: bootstrap flag instead of memory.json check
+    # MISER_NO_WIZARD=1 skips the first-run wizard (headless/CI/Docker)
     _bootstrap_flag = Path(__file__).parent / ".miser_bootstrapped"
-    if not _bootstrap_flag.exists() and not cli.wizard:
+    if not _bootstrap_flag.exists() and not cli.wizard \
+       and not os.environ.get("MISER_NO_WIZARD"):
         _log.info("First run detected — launching setup wizard")
         from scripts.setup_wizard import wizard as _wizard
         _wizard()
@@ -722,9 +729,9 @@ if __name__ == "__main__":
     console.print(Panel(
         "[bold cyan]Miser v1.4.1[/bold cyan]  ·  Claude Code's local co-processor\n\n"
         "[bold]Zero-LLM endpoints (<50ms):[/bold]\n"
-        "  [green]/v1/read /v1/grep /v1/outline /v1/tree /v1/exists /v1/run /v1/write /v1/patch[/green]\n\n"
+        "  [green]/read /grep /outline /tree /exists /run /write /patch[/green]\n\n"
         "[bold]Local-LLM endpoints (0 API tokens):[/bold]\n"
-        "  [cyan]/v1/ask /v1/codegen /v1/explain /v1/fix /v1/test /v1/review /v1/summarize /v1/git_summary /v1/batch[/cyan]\n\n"
+        "  [cyan]/ask /codegen /explain /fix /test /review /summarize /git_summary /batch[/cyan]\n\n"
         "[bold]Admin endpoints:[/bold]\n"
         "  [magenta]/health /status /metrics /memory /openapi.json[/magenta]\n\n"
         f"[bold]Model:[/bold]  {MODEL}  (family: {adapter.family})\n"

@@ -5,6 +5,10 @@ Detects Ollama, pulls the default model, and guides the user through setup.
 
 import subprocess, sys, time, os
 
+# Windows: force UTF-8 to prevent GBK encoding errors
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 def check_ollama() -> bool:
     """Check if Ollama is installed and running."""
     try:
