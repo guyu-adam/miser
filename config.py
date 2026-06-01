@@ -1,5 +1,5 @@
 """
-config.py - Centralized configuration for Miser v1.5.
+config.py - Centralized configuration for Miser v2.0.
 Single source of truth for all env vars, CLI args, and defaults.
 
 New in v1.5: model="auto" means auto-detect from available backends.
@@ -77,6 +77,8 @@ Examples:
                         help="Show version and exit")
     parser.add_argument("--setup", action="store_true",
                         help="Run inline setup wizard (model download guide)")
+    parser.add_argument("--setup-agent", action="store_true",
+                        help="Auto-configure MCP for all detected agents (zero manual config)")
 
     return parser.parse_args(argv)
 

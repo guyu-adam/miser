@@ -9,6 +9,7 @@ venv/
 embeddings.json
 memory.json
 /tmp/miser.log
+test-results/
 
 # macOS
 .DS_Store

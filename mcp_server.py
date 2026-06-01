@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Miser MCP Server v1.5 — Drop-in MCP bridge for ANY agent.
+Miser MCP Server v2.0 — Drop-in MCP bridge for ANY agent.
 
 Usage — add to agent's MCP config:
   {"mcpServers": {"miser": {"command": "python3", "args": [".../mcp_server.py"]}}}

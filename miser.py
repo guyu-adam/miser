@@ -1,6 +1,7 @@
 """
-Miser v1.5 - Zero-token local AI co-processor.
+Miser v2.0 - Zero-token local AI co-processor.
 Auto-detects any local LLM (Ollama, LM Studio, llama.cpp, vLLM, etc.).
+v2.0: auto-start Ollama, best-model selection, one-command agent setup.
 Two execution paths:
   1. Zero-LLM (<50ms): shell, file read/write/grep/tree/exists/outline/patch
   2. Local LLM (no API cost): summarize, codegen, explain, fix, test, review, git_summary
@@ -18,7 +19,7 @@ if sys.platform == "win32":
 os.environ["NO_PROXY"] = "localhost,127.0.0.1"
 os.environ["no_proxy"] = "localhost,127.0.0.1"
 
-# ── Dependency self-check (v1.5: fail gracefully with fix instructions) ─────
+# ── Dependency self-check (v2.0: fail gracefully with fix instructions) ─────
 
 def _check_deps():
     """Check required packages. Print install hint if missing."""
@@ -645,7 +646,7 @@ def note():
     return jsonify({"saved": {key: val}})
 
 # ── main ─────────────────────────────────────────────────────────────────────────
-# ── v1.5: auto-detect backend + model on startup ───────────────────────────────
+# ── v2.0: auto-detect backend + model on startup ───────────────────────────────
 
 def main():
     """Entry point for 'miser' CLI command (pip install).
@@ -666,16 +667,44 @@ def main():
 
     cli = cli_cfg["_cli"]
     if cli.version:
-        print("Miser v1.5.0")
+        print("Miser v2.0.0")
+        _sys.exit(0)
+
+    if cli.setup_agent:
+        from agent_setup import detect_agents, setup_agents, print_summary
+        agents = detect_agents()
+        if not agents:
+            print("No supported agents detected.")
+            print("Supported: Hermes Agent, Claude Desktop, Continue, Cursor, Windsurf")
+            print(f"\n  To configure manually, point your agent's MCP config to:")
+            print(f"    {Path(__file__).parent / 'mcp_server.py'}")
+            _sys.exit(0)
+        print(f"\nDetected {len(agents)} agent(s):")
+        for name, path, _ in agents:
+            print(f"  • {name} ({path})")
+        results = setup_agents(agents)
+        print_summary(results)
         _sys.exit(0)
 
     # ── Auto-discovery ───────────────────────────────────────────────────
     console.print()
-    console.print(Panel("[bold cyan]Miser v1.5[/bold cyan] - Auto-detecting local LLM...",
+    console.print(Panel("[bold cyan]Miser v2.0[/bold cyan] - Auto-detecting local LLM...",
                         border_style="cyan"))
 
     from backends import discover_backend
     backend = discover_backend()
+
+    # ── Auto-start Ollama if installed but not running ─────────────────
+    if backend is None:
+        from backends.launcher import find_ollama_binary, start_ollama
+        ollama_bin = find_ollama_binary()
+        if ollama_bin:
+            console.print(f"  [dim]Ollama found at {ollama_bin}, starting...[/dim]")
+            if start_ollama(ollama_bin):
+                console.print("  [green]Ollama started successfully.[/green]")
+                backend = discover_backend()
+            else:
+                console.print("  [yellow]Ollama found but could not start.[/yellow]")
 
     if backend is None:
         console.print()
@@ -702,9 +731,26 @@ def main():
     else:
         NO_LLM = False
         if MODEL == "auto":
-            models = backend.list_models()
-            if models:
-                MODEL = models[0]
+            # v1.5 → v2.0: select best model, not just first
+            from backends.launcher import select_best_model
+            models_raw = backend.list_models()
+            # Get full model info for ranking (ollama backend returns names only from list_models)
+            # Try to get detailed info via /api/tags
+            try:
+                import requests as _r
+                resp = _r.get(f"{backend.base_url}/api/tags", timeout=5)
+                if resp.status_code == 200:
+                    models_full = resp.json().get("models", [])
+                else:
+                    models_full = []
+            except Exception:
+                models_full = []
+
+            if models_full:
+                MODEL = select_best_model(models_full)
+                console.print(f"  [green]Best model selected: {MODEL}[/green]")
+            elif models_raw:
+                MODEL = models_raw[0]
                 console.print(f"  [green]Auto-selected model: {MODEL}[/green]")
             else:
                 console.print("  [yellow]No models found in backend. LLM features disabled.[/yellow]")
@@ -757,7 +803,7 @@ def main():
             h.setFormatter(fmt)
 
     _log.basicConfig(level=_log.INFO, handlers=handlers, force=True)
-    _log.info(f"Miser v1.5.0 port={PORT} model={MODEL} backend={backend.name if backend else 'none'}")
+    _log.info(f"Miser v2.0.0 port={PORT} model={MODEL} backend={backend.name if backend else 'none'}")
 
     # Register security middleware
     app.before_request(rate_limit_middleware)
@@ -812,7 +858,7 @@ def main():
     model_note  = MODEL if not NO_LLM else "[yellow]none (zero-LLM only)[/yellow]"
 
     console.print(Panel(
-        "[bold cyan]Miser v1.5[/bold cyan]  *  Agent-agnostic local co-processor\n\n"
+        "[bold cyan]Miser v2.0[/bold cyan]  *  Agent-agnostic local co-processor\n\n"
         "[bold]Zero-LLM endpoints (<50ms):[/bold]\n"
         "  [green]/read /grep /outline /tree /exists /run /write /patch[/green]\n\n"
         "[bold]Local-LLM endpoints (0 API tokens):[/bold]\n"
