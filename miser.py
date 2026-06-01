@@ -192,17 +192,17 @@ def run_task(task: str, sender: str, system: str = "", max_tokens: int = 600,
     mode, pre = route(task, explicit_type)
     console.print()
     console.print(Rule(f"[cyan]#{st.count}  {ts}  [{mode}]  {sender}[/cyan]"))
-    console.print(f"[yellow]▶ {task[:120]}[/yellow]\n")
+    console.print(f"[yellow]> {task[:120]}[/yellow]\n")
     try:
         result = pre if mode == "direct" else llm(task, system, max_tokens)
         st.result = result
         mem.record(st.count, task, result)
         count_saved(len(result))
-        console.print(Panel(result[:1000], title="[green]✓[/green]", border_style="green"))
+        console.print(Panel(result[:1000], title="[green]OK[/green]", border_style="green"))
     except Exception as e:
         result = f"ERROR: {e}"
         st.result = result
-        console.print(Panel(result, title="[red]✗[/red]", border_style="red"))
+        console.print(Panel(result, title="[red]ERR[/red]", border_style="red"))
     finally:
         st.set("IDLE", "—")
         # v1.3: drain queued tasks (commercialization P0)
@@ -764,7 +764,7 @@ if __name__ == "__main__":
             payload = adapter.generate_payload("", "ok", max_tokens=1)
             req.post(adapter.url, json=payload, timeout=60)
             _log.info("LLM warmed up")
-            console.print("[dim green]✓ LLM warmed up[/dim green]")
+            console.print("[dim green]OK LLM warmed up[/dim green]")
         except Exception:
             pass
     threading.Thread(target=_warmup, daemon=True).start()
@@ -786,7 +786,7 @@ if __name__ == "__main__":
         border_style="cyan", title="[bold]Ready[/bold]"
     ))
     _log.info("Ready.")
-    console.print("[green]✓ Waiting...[/green]\n")
+    console.print("[green]OK Waiting...[/green]\n")
 
     while not _shutdown_flag.is_set():
         time.sleep(1)
