@@ -65,7 +65,7 @@ def find_ollama_binary() -> Optional[str]:
 
 # ── Start Ollama ────────────────────────────────────────────────────────────
 
-def start_ollama(binary: Optional[str] = None, timeout: float = 30.0) -> bool:
+def start_ollama(binary: Optional[str] = None, timeout: float = 45.0) -> bool:
     """Launch Ollama in the background if not already running.
     Blocks up to `timeout` seconds waiting for it to become ready.
     Returns True if Ollama is reachable afterwards.
