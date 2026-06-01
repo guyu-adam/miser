@@ -1,5 +1,5 @@
 """
-Miser v2.0 client for any agent - with quality assurance.
+Miser v1.5.3 client for any agent - with quality assurance.
 Cross-platform: Windows, macOS, Linux.
 
 Usage:

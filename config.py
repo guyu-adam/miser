@@ -1,5 +1,5 @@
 """
-config.py - Centralized configuration for Miser v2.0.
+config.py - Centralized configuration for Miser v1.5.3.
 Single source of truth for all env vars, CLI args, and defaults.
 
 New in v1.5: model="auto" means auto-detect from available backends.
