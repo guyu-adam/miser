@@ -1,41 +1,18 @@
 """
-Miser v1.5.5 - Zero-token local AI co-processor.
-Auto-detects any local LLM (Ollama, LM Studio, llama.cpp, vLLM, etc.).
-v1.5.5: + incremental diff, semantic search, AST outline, semantic cache, text compression. Tier1+Tier2 token-saving algorithms.
+Miser v1.5.5 — Claude Code's local co-processor.
 Two execution paths:
-  1. Zero-LLM (<50ms): shell, file read/write/grep/tree/exists/outline/patch
+  1. Zero-LLM (<50ms): shell, file read/write/grep/tree/exists/outline/patch/diff/search/compress
   2. Local LLM (no API cost): summarize, codegen, explain, fix, test, review, git_summary
+v1.5.5: incremental diff (#6), semantic search+BM25 (#5), semantic cache (#2),
+        AST extraction (#4), density compressor (#1).
 """
 
 import os, re, threading, time, signal, uuid, sys
 from datetime import datetime
 from pathlib import Path
 
-# Windows: force UTF-8 to prevent GBK encoding errors with emoji/special chars
-if sys.platform == "win32":
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-
 os.environ["NO_PROXY"] = "localhost,127.0.0.1"
 os.environ["no_proxy"] = "localhost,127.0.0.1"
-
-# ── Dependency self-check (v1.5.5: fail gracefully with fix instructions) ─────
-
-def _check_deps():
-    """Check required packages. Print install hint if missing."""
-    missing = []
-    for pkg in ("flask", "rich", "requests"):
-        try:
-            __import__(pkg)
-        except ImportError:
-            missing.append(pkg)
-    if missing:
-        pkgs = " ".join(missing)
-        print(f"\n  Missing packages: {pkgs}")
-        print(f"  Fix: pip install {pkgs}\n")
-        sys.exit(1)
-
-_check_deps()
 
 import requests as req
 from flask import Flask, request, jsonify
@@ -61,30 +38,29 @@ from config import resolve as resolve_config
 from cache import cache_stats
 from breaker import ollama_breaker
 from facade import set_facade_model
+from diff import diff_file, diff_dir          # v1.5.5
+from search import search as _search_code      # v1.5.5
+from compress import compress_text, compress_file  # v1.5.5
 
 console = Console()
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024   # 5MB
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024   # 5MB (v1.3.1 P1)
 
-# Module-level: env-only defaults (safe for test imports). CLI resolved in __main__.
+# Module-level: env-only (safe for test imports). CLI resolved in __main__.
 cfg = resolve_config(argv=[])
-MODEL = cfg["model"]       # "auto" until __main__ discovers
+MODEL = cfg["model"]
 AUTH_TOKEN = cfg["auth_token"]
 PORT = cfg["port"]
-HOST = cfg["host"]
 LOG_FORMAT = cfg["log_format"]
 AUTH_HASH = hash_token(AUTH_TOKEN) if AUTH_TOKEN else ""
 
-# Lazy placeholders - replaced in __main__ after auto-discovery
-adapter = None
+adapter = ModelAdapter(MODEL)
 mem = Memory()
-backend = None
 
 import routes.admin as _admin
 _admin.MODEL = MODEL
 _admin.ADAPTER = adapter
 _admin.MEM = mem
-_admin.BACKEND = backend
 
 # Register blueprints at module level (test-safe)
 from routes.zero import zero as _zero_bp, set_run_task as _set_run
@@ -99,7 +75,7 @@ app.register_blueprint(_facade_bp, url_prefix="/v1")
 class State:
     def __init__(self):
         self.status = "IDLE"
-        self.task   = "-"
+        self.task   = "—"
         self.result = ""
         self.count  = 0
         self._lock  = threading.Lock()
@@ -109,9 +85,6 @@ class State:
             if task is not None: self.task = task
 
 st = State()
-
-# Flag set in main() during backend discovery
-NO_LLM = False
 
 # ── auth helper (review item #4) ────────────────────────────────────────────────
 
@@ -125,14 +98,11 @@ def _check_auth(req_data: dict) -> bool:
 # ── LLM call ────────────────────────────────────────────────────────────────────
 
 def llm(task: str, system: str = "", max_tokens: int = 600, mode: str = "text") -> str:
-    if backend is None:
-        return "ERROR: No local LLM backend available. Start Ollama/LM Studio first."
-
     is_code    = mode == "code"    or re.search(r'\b(write|def|function|code|implement|class)\b', task, re.I)
     is_bullets = mode == "bullets" or re.search(r'\b(summarize|bullet|list|summary|points)\b', task, re.I)
     detected_mode = "code" if is_code and not is_bullets else ("bullets" if is_bullets else "text")
 
-    sys_prompt = "You are Miser, a local AI assistant.\nOutput ONLY the final answer, no preamble.\n"
+    sys_prompt = "You are Miser, Claude Code's local assistant.\nOutput ONLY the final answer, no preamble.\n"
     if detected_mode == "text":
         ctx_text = mem.ctx(task)
         if ctx_text:
@@ -140,14 +110,14 @@ def llm(task: str, system: str = "", max_tokens: int = 600, mode: str = "text") 
     if system:
         sys_prompt += system
 
+    payload = adapter.generate_payload(sys_prompt, task, max_tokens=max_tokens)
+
     for attempt in range(3):
         try:
-            answer = backend.generate(MODEL, sys_prompt, task,
-                                      max_tokens=max_tokens, temperature=0.2)
-            if answer:
-                # Post-clean through adapter for code/bullet mode extraction
-                if detected_mode != "text":
-                    answer = adapter.clean(answer, mode=detected_mode)
+            resp = req.post(adapter.url, json=payload, timeout=240)
+            raw  = adapter.extract_text(resp.json())
+            if raw:
+                answer = adapter.clean(raw, mode=detected_mode)
                 if answer:
                     return answer
             console.print(f"[dim yellow]empty response, retry {attempt+1}/3[/dim yellow]")
@@ -171,9 +141,12 @@ EXPLICIT_ROUTES = {
     "run":      lambda d: run_shell(d.get("cmd",""), d.get("timeout",30)),
     "ls":       lambda d: list_dir(d.get("path","~/Desktop"), d.get("pattern","*")),
     "calc":     lambda d: _safe_eval(d.get("expr","0")),   # review item #1
+    "diff":     lambda d: diff_file(d.get("path",""), d.get("hash",""), d.get("content","")),  # v1.5.5
+    "search":   lambda d: _search_code(d.get("dir","."), d.get("query",""), d.get("top_k",10)),  # v1.5.5
+    "compress": lambda d: compress_text(d.get("text",""), d.get("threshold",0.5)),  # v1.5.5
 }
 
-# Legacy regex routing - now only for /ask fallback (review item #9)
+# Legacy regex routing — now only for /ask fallback (review item #9)
 FALLBACK_ROUTES = [
     (re.compile(I18N_PATTERNS["list_files"] + r".{0,20}?" + I18N_PATTERNS["file_dir_words"], re.I),
      lambda t: list_dir(extract_path(t, "~/Desktop"))),
@@ -231,7 +204,7 @@ def run_task(task: str, sender: str, system: str = "", max_tokens: int = 600,
         st.result = result
         console.print(Panel(result, title="[red]✗[/red]", border_style="red"))
     finally:
-        st.set("IDLE", "-")
+        st.set("IDLE", "—")
         # v1.3: drain queued tasks (commercialization P0)
         q = get_queue()
         next_task = q.dequeue()
@@ -248,7 +221,7 @@ def run_task(task: str, sender: str, system: str = "", max_tokens: int = 600,
 # ── endpoints ────────────────────────────────────────────────────────────────────
 
 def _auth_fail():
-    return jsonify({"error": "unauthorized - MISER_AUTH_TOKEN required"}), 401
+    return jsonify({"error": "unauthorized — MISER_AUTH_TOKEN required"}), 401
 
 @app.route("/ask", methods=["POST"])
 def ask():
@@ -314,24 +287,7 @@ def read_file_ep():
     d = request.json or {}
     path = d.get("path","").strip()
     if not path: return jsonify({"error":"path required"}), 400
-    
-    # v1.5.5: try semantic cache first
-    from embed import cache_lookup, cache_store
-    query_hint = d.get("query_hint", "")
-    cache_key = f"read:{os.path.expanduser(path)}"
-    cached = cache_lookup(cache_key, query_hint)
-    if cached:
-        console.print(Rule(f"[green]read (cached)  {path}[/green]"))
-        return jsonify({"content": cached, "path": path, "cached": True})
-    
-    # v1.5.5: incremental diff for repeated reads
-    from incremental import read as inc_read
-    content = inc_read(path, d.get("limit", 8000))
-    
-    # Cache the result
-    if not content.startswith("[unchanged]") and not content.startswith("File not"):
-        cache_store(cache_key, content, query_hint)
-    
+    content = read_file(path, d.get("limit", 8000))
     count_saved(len(content))
     observe_access(path)
     console.print(Rule(f"[green]read  {path}[/green]"))
@@ -347,12 +303,7 @@ def grep():
     ts = datetime.now().strftime("%H:%M:%S")
     console.print(Rule(f"[green]grep  {ts}[/green]"))
     result = grep_file(path, pattern, d.get("context", 2), d.get("ignore_case", True))
-    # Use Path.stat() for file size instead of reading the whole file
-    try:
-        fsize = Path(os.path.expanduser(path)).stat().st_size
-    except OSError:
-        fsize = 0
-    count_saved(fsize - len(result))
+    count_saved(len(read_file(path, 99999)) - len(result))
     return jsonify({"matches": result, "path": path, "pattern": pattern})
 
 @app.route("/outline", methods=["POST"])
@@ -362,14 +313,8 @@ def outline():
     if not path: return jsonify({"error":"path required"}), 400
     ts = datetime.now().strftime("%H:%M:%S")
     console.print(Rule(f"[green]outline  {ts}[/green]"))
-    # v1.5.5: use AST-based outline for Python/JS/TS
-    from ast_outline import outline as ast_outline
-    result = ast_outline(os.path.expanduser(path))
-    try:
-        fsize = Path(os.path.expanduser(path)).stat().st_size
-    except OSError:
-        fsize = 0
-    count_saved(fsize - len(result))
+    result = outline_file(path)
+    count_saved(len(read_file(path, 99999)) - len(result))
     observe_access(path)
     console.print(f"[dim]{result[:400]}[/dim]")
     return jsonify({"outline": result, "path": path})
@@ -397,54 +342,6 @@ def exists():
         info["is_dir"]  = p.is_dir()
         info["size"]    = p.stat().st_size if p.is_file() else None
     return jsonify(info)
-
-@app.route("/context", methods=["POST"])
-def context_summary():
-    """Project context snapshot — git status, recent changes, project stats."""
-    from context import summary as ctx_summary, set_scan_root
-    d = request.json or {}
-    path = d.get("path", "").strip()
-    if path:
-        set_scan_root(os.path.expanduser(path))
-    result = ctx_summary(mem=mem)
-    return jsonify({"context": result, "timestamp": datetime.now().strftime("%H:%M:%S")})
-
-@app.route("/search", methods=["POST"])
-def semantic_search():
-    """Semantic search inside a file using embeddings."""
-    d = request.json or {}
-    query = d.get("query", "").strip()
-    path = d.get("path", "").strip()
-    if not query or not path:
-        return jsonify({"error": "query and path required"}), 400
-    from embed import search as sem_search
-    result = sem_search(query, os.path.expanduser(path), d.get("top_k", 3))
-    console.print(Rule(f"[green]search  {query[:50]}[/green]"))
-    return jsonify({"results": result, "query": query, "path": path})
-
-@app.route("/diff", methods=["POST"])
-def diff_read():
-    """Incremental file read using SHA-256 hash + diff."""
-    d = request.json or {}
-    path = d.get("path", "").strip()
-    if not path:
-        return jsonify({"error": "path required"}), 400
-    from incremental import read as inc_read
-    result = inc_read(os.path.expanduser(path))
-    console.print(Rule(f"[green]diff  {path}[/green]"))
-    return jsonify({"content": result, "path": path})
-
-@app.route("/compress", methods=["POST"])
-def compress_text():
-    """Compress text using heuristic information-density scoring."""
-    d = request.json or {}
-    text = d.get("text", "").strip()
-    if not text:
-        return jsonify({"error": "text required"}), 400
-    from compressor import compress as comp
-    result = comp(text, target_ratio=d.get("ratio", 0.5))
-    console.print(Rule(f"[green]compress  {len(text)}→{len(result)} chars[/green]"))
-    return jsonify({"compressed": result, "original_chars": len(text)})
 
 @app.route("/write", methods=["POST"])
 def write_file_ep():
@@ -695,6 +592,15 @@ def batch():
             elif typ == "write":
                 results.append({"type": "write", "result": write_to_file(
                     t.get("path",""), t.get("content",""))})
+            elif typ == "diff":   # v1.5.5
+                results.append({"type": "diff", "result": diff_file(
+                    t.get("path",""), t.get("hash",""), t.get("content",""))})
+            elif typ == "search":   # v1.5.5
+                results.append({"type": "search", "result": _search_code(
+                    t.get("dir","."), t.get("query",""), t.get("top_k",10))})
+            elif typ == "compress":   # v1.5.5
+                results.append({"type": "compress", "result": compress_text(
+                    t.get("text",""), t.get("threshold",0.5))})
             else:
                 results.append({"type": "ask",
                     "result": run_task(t.get("task",""), "batch",
@@ -712,148 +618,96 @@ def note():
     mem.save(key, val)
     return jsonify({"saved": {key: val}})
 
+
+# ── v1.5.5 endpoints (legacy paths — prefer /v1/ routes) ─────────────────────────
+
+@app.route("/diff", methods=["POST"])
+def diff_ep():
+    d = request.json or {}
+    path = d.get("path", "").strip()
+    if not path: return jsonify({"error": "path required"}), 400
+    p = Path(os.path.expanduser(path))
+    if p.is_dir():
+        result = diff_dir(path, d.get("snapshot", {}))
+    else:
+        result = diff_file(path, d.get("hash", ""), d.get("content", ""))
+    if result.get("savings", 0) > 0:
+        count_saved(result["savings"])
+    return jsonify(result)
+
+
+@app.route("/search", methods=["POST"])
+def search_ep():
+    d = request.json or {}
+    directory = d.get("directory", d.get("dir", "."))
+    query = d.get("query", "").strip()
+    if not query: return jsonify({"error": "query required"}), 400
+    top_k = min(int(d.get("top_k", 10)), 50)
+    result = _search_code(directory, query, top_k, d.get("exclude"))
+    return jsonify(result)
+
+
+@app.route("/compress", methods=["POST"])
+def compress_ep():
+    d = request.json or {}
+    threshold = float(d.get("threshold", 0.5))
+    if "text" in d:
+        result = compress_text(d["text"], threshold)
+    elif "path" in d:
+        result = compress_file(d["path"], threshold)
+    else:
+        return jsonify({"error": "text or path required"}), 400
+    if result.get("tokens_saved", 0) > 0:
+        count_saved(result["tokens_saved"])
+    return jsonify(result)
+
 # ── main ─────────────────────────────────────────────────────────────────────────
-# ── v1.5.4: auto-detect backend + model on startup ───────────────────────────────
 
-def main():
-    """Entry point for 'miser' CLI command (pip install).
-    Also called by if __name__ == '__main__'.
-    """
-    import sys as _sys, json as _json, logging as _log
-    global MODEL, AUTH_TOKEN, PORT, HOST, LOG_FORMAT, AUTH_HASH, adapter, backend, NO_LLM
-    _sys.argv[0] = "miser"
+if __name__ == "__main__":
+    import json as _json
+    import logging as _log
 
-    # ── Re-resolve with CLI args ──────────────────────────────────────────
-    cli_cfg = resolve_config(argv=_sys.argv[1:])
-    MODEL      = cli_cfg["model"]
+    # Re-resolve with CLI args (Phase 1 #8)
+    cli_cfg = resolve_config(argv=sys.argv[1:])
+    MODEL = cli_cfg["model"]
     AUTH_TOKEN = cli_cfg["auth_token"]
-    PORT       = cli_cfg["port"]
-    HOST       = cli_cfg["host"]
+    PORT = cli_cfg["port"]
     LOG_FORMAT = cli_cfg["log_format"]
-    AUTH_HASH  = hash_token(AUTH_TOKEN) if AUTH_TOKEN else ""
+    AUTH_HASH = hash_token(AUTH_TOKEN) if AUTH_TOKEN else ""
 
+    # Version + wizard handling (Phase 1 #8, #9)
     cli = cli_cfg["_cli"]
     if cli.version:
-        print("Miser v1.5.5")
-        _sys.exit(0)
+        print(f"Miser v1.5.5")
+        sys.exit(0)
+    if cli.wizard:
+        from setup_wizard import wizard as _wizard
+        _wizard()
+        sys.exit(0)
 
-    if cli.setup_agent:
-        from agent_setup import detect_agents, setup_agents, print_summary
-        agents = detect_agents()
-        if not agents:
-            print("No supported agents detected.")
-            print("Supported: Hermes Agent, Claude Desktop, Continue, Cursor, Windsurf")
-            print(f"\n  To configure manually, point your agent's MCP config to:")
-            print(f"    {Path(__file__).parent / 'mcp_server.py'}")
-            _sys.exit(0)
-        print(f"\nDetected {len(agents)} agent(s):")
-        for name, path, _ in agents:
-            print(f"  • {name} ({path})")
-        results = setup_agents(agents)
-        print_summary(results)
-        _sys.exit(0)
+    # #34 fix: auto-detect first run (no model configured + no memory.json)
+    _memory_file = Path(__file__).parent / "memory.json"
+    if not _memory_file.exists() and not cli.wizard:
+        _log.info("First run detected — launching setup wizard")
+        from setup_wizard import wizard as _wizard
+        _wizard()
 
-    # ── Auto-discovery ───────────────────────────────────────────────────
-    console.print()
-    console.print(Panel("[bold cyan]Miser v1.5.5[/bold cyan] - Auto-detecting local LLM...",
-                        border_style="cyan"))
-
-    from backends import discover_backend
-    backend = discover_backend()
-
-    # ── Auto-start Ollama if installed but not running ─────────────────
-    if backend is None:
-        from backends.launcher import find_ollama_binary, start_ollama
-        ollama_bin = find_ollama_binary()
-        if ollama_bin:
-            console.print(f"  [dim]Ollama found at {ollama_bin}, starting...[/dim]")
-            if start_ollama(ollama_bin):
-                console.print("  [green]Ollama started successfully.[/green]")
-                backend = discover_backend()
-            else:
-                console.print("  [yellow]Ollama found but could not start.[/yellow]")
-
-    if backend is None:
-        console.print()
-        console.print("[red]No local LLM backend found![/red]")
-        console.print()
-        console.print("[yellow]Quick start - pick one:[/yellow]")
-        console.print()
-        console.print("  [bold]Option A: Ollama[/bold] (recommended, easiest)")
-        console.print("    1. Download: https://ollama.com")
-        console.print("    2. Install and run: ollama serve")
-        console.print("    3. Pull a model:   ollama pull gemma4:latest")
-        console.print("    4. Restart Miser:  miser")
-        console.print()
-        console.print("  [bold]Option B: LM Studio[/bold] (GUI)")
-        console.print("    1. Download: https://lmstudio.ai")
-        console.print("    2. Download any model in the app")
-        console.print("    3. Start the local server (port 1234)")
-        console.print("    4. Restart Miser:  miser")
-        console.print()
-        console.print("[dim]Zero-LLM endpoints (/read, /grep, /run, etc.) work without a model.[/dim]")
-        console.print("[dim]Add --setup to see this guide again.[/dim]")
-        console.print()
-        NO_LLM = True
-    else:
-        NO_LLM = False
-        if MODEL == "auto":
-            # v1.5.3: select best model, not just first
-            from backends.launcher import select_best_model
-            models_raw = backend.list_models()
-            # Get full model info for ranking (ollama backend returns names only from list_models)
-            # Try to get detailed info via /api/tags
-            try:
-                import requests as _r
-                resp = _r.get(f"{backend.base_url}/api/tags", timeout=5)
-                if resp.status_code == 200:
-                    models_full = resp.json().get("models", [])
-                else:
-                    models_full = []
-            except Exception:
-                models_full = []
-
-            if models_full:
-                MODEL = select_best_model(models_full)
-                console.print(f"  [green]Best model selected: {MODEL}[/green]")
-            elif models_raw:
-                MODEL = models_raw[0]
-                console.print(f"  [green]Auto-selected model: {MODEL}[/green]")
-            else:
-                console.print("  [yellow]No models found in backend. LLM features disabled.[/yellow]")
-                console.print("  [dim]Pull a model first: ollama pull gemma4:latest[/dim]")
-                NO_LLM = True
-
-        if not NO_LLM:
-            try:
-                adapter = ModelAdapter(MODEL)
-                console.print(f"  [dim]Model family: {adapter.family}[/dim]")
-            except Exception as e:
-                console.print(f"  [red]Model init failed: {e}[/red]")
-                NO_LLM = True
-
-    # ── Bootstrap ────────────────────────────────────────────────────────
-    _bootstrap_flag = Path(__file__).parent / ".miser_bootstrapped"
-    if not _bootstrap_flag.exists() and not os.environ.get("MISER_NO_WIZARD"):
-        _bootstrap_flag.touch()
-
-    # ── Update cross-module state ────────────────────────────────────────
-    _admin.MODEL   = MODEL
+    # Update admin + security with resolved values
+    _admin.MODEL = MODEL
     _admin.ADAPTER = adapter
-    _admin.MEM     = mem
-    _admin.BACKEND = backend
+    _admin.MEM = mem
 
-    # Structured logging
+    # Structured logging (Phase 1 #2: JSON mode)
     _log.getLogger("werkzeug").setLevel(_log.WARNING)
 
     class JsonFormatter(_log.Formatter):
         def format(self, record):
             entry = {
-                "timestamp":  datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                "level":      record.levelname,
-                "message":    record.getMessage(),
-                "module":     record.name,
-                "version":    "1.5.5",
+                "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                "level": record.levelname,
+                "message": record.getMessage(),
+                "module": record.name,
+                "version": "1.5.5",
             }
             if record.exc_info and record.exc_info[0]:
                 import traceback
@@ -870,24 +724,22 @@ def main():
             h.setFormatter(fmt)
 
     _log.basicConfig(level=_log.INFO, handlers=handlers, force=True)
-    _log.info(f"Miser v1.5.5 port={PORT} model={MODEL} backend={backend.name if backend else 'none'}")
+    _log.info(f"Starting v1.5.5 port={PORT} model={MODEL} log={LOG_FORMAT}")
 
-    # Register security middleware
+    # Register security middleware (Phase 1 #1, #3)
     app.before_request(rate_limit_middleware)
     app.after_request(cors_middleware)
 
-    # Wire up cross-module callbacks
+    # Wire up cross-module callbacks (fix #33)
     _set_run(run_task)
-    if adapter is not None:
-        set_facade_model(MODEL, adapter, backend)
+    set_facade_model(MODEL, adapter)
 
-    # Start Flask
     threading.Thread(
-        target=lambda: app.run(host=HOST, port=PORT),
+        target=lambda: app.run(host="0.0.0.0", port=PORT),
         daemon=True
     ).start()
 
-    # Graceful shutdown
+    # Graceful shutdown (Phase 1 #3)
     _shutdown_flag = threading.Event()
 
     def _handle_shutdown(sig, frame):
@@ -901,48 +753,40 @@ def main():
                 run_task(task.task, task.sender, task.system, task.max_tokens, task.explicit_type)
                 drained += 1
         _log.info(f"Shutdown complete. Drained {drained} tasks.")
-        _sys.exit(0)
+        sys.exit(0)
 
     signal.signal(signal.SIGTERM, _handle_shutdown)
     signal.signal(signal.SIGINT, _handle_shutdown)
 
-    # Warmup LLM if available
-    if not NO_LLM and adapter is not None:
-        def _warmup():
-            time.sleep(3)
-            try:
-                payload = adapter.generate_payload("", "ok", max_tokens=1)
-                req.post(adapter.url, json=payload, timeout=60)
-                _log.info("LLM warmed up")
-                console.print("[dim green]v LLM warmed up[/dim green]")
-            except Exception:
-                pass
-        threading.Thread(target=_warmup, daemon=True).start()
+    def _warmup():
+        time.sleep(3)
+        try:
+            payload = adapter.generate_payload("", "ok", max_tokens=1)
+            req.post(adapter.url, json=payload, timeout=60)
+            _log.info("LLM warmed up")
+            console.print("[dim green]✓ LLM warmed up[/dim green]")
+        except Exception:
+            pass
+    threading.Thread(target=_warmup, daemon=True).start()
 
-    auth_note   = "[yellow]AUTH enabled[/yellow]" if AUTH_TOKEN else "no auth"
-    log_note    = "json" if LOG_FORMAT == "json" else "text"
-    backend_note = f"{backend.name} @ {backend.base_url}" if backend else "none"
-    model_note  = MODEL if not NO_LLM else "[yellow]none (zero-LLM only)[/yellow]"
-
+    auth_note = "[yellow]AUTH enabled[/yellow]" if AUTH_TOKEN else "no auth"
+    log_note = "json" if LOG_FORMAT == "json" else "text"
     console.print(Panel(
-        "[bold cyan]Miser v1.5.5[/bold cyan]  *  Agent-agnostic local co-processor\n\n"
+        "[bold cyan]Miser v1.5.5[/bold cyan]  ·  Claude Code's local co-processor\n\n"
         "[bold]Zero-LLM endpoints (<50ms):[/bold]\n"
-        "  [green]/read /grep /outline /tree /exists /run /write /patch[/green]\n\n"
+        "  [green]/v1/read /v1/grep /v1/outline /v1/tree /v1/exists /v1/run /v1/write /v1/patch[/green]\n"
+        "  [green]/v1/diff /v1/search /v1/compress[/green] [dim](v1.5.5)[/dim]\n\n"
         "[bold]Local-LLM endpoints (0 API tokens):[/bold]\n"
-        "  [cyan]/ask /codegen /explain /fix /test /review /summarize /git_summary /batch[/cyan]\n\n"
+        "  [cyan]/v1/ask /v1/codegen /v1/explain /v1/fix /v1/test /v1/review /v1/summarize /v1/git_summary /v1/batch[/cyan]\n\n"
         "[bold]Admin endpoints:[/bold]\n"
         "  [magenta]/health /status /metrics /memory /openapi.json[/magenta]\n\n"
-        f"[bold]Backend:[/bold] {backend_note}\n"
-        f"[bold]Model:[/bold]   {model_note}\n"
-        f"[bold]Auth:[/bold]    {auth_note}  [bold]Log:[/bold] {log_note}\n\n"
-        f"[dim]http://{HOST}:{PORT}[/dim]",
+        f"[bold]Model:[/bold]  {MODEL}  (family: {adapter.family})\n"
+        f"[bold]Auth:[/bold]   {auth_note}  [bold]Log:[/bold] {log_note}  [bold]Rate:[/bold] {cli_cfg['rate_llm']}/{cli_cfg['rate_zero']}/min\n"
+        "[dim]http://localhost:7860[/dim]",
         border_style="cyan", title="[bold]Ready[/bold]"
     ))
     _log.info("Ready.")
-    console.print("[green]v Waiting...[/green]\n")
+    console.print("[green]✓ Waiting...[/green]\n")
 
     while not _shutdown_flag.is_set():
         time.sleep(1)
-
-if __name__ == "__main__":
-    main()

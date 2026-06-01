@@ -116,7 +116,7 @@ ERROR_CODES = {
 }
 
 
-def error_response(code: str, detail: str = "", status: int | None = None) -> tuple:
+def error_response(code: str, detail: str = "", status=None) -> tuple:
     """Build a standardized error response (safe without app context)."""
     import json as _json
     from flask import Response
