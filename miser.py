@@ -680,14 +680,14 @@ if __name__ == "__main__":
     if cli.version:
         print(f"Miser v1.5.5")
         sys.exit(0)
-    if cli.wizard:
+    if cli.setup:
         from setup_wizard import wizard as _wizard
         _wizard()
         sys.exit(0)
 
     # #34 fix: auto-detect first run (no model configured + no memory.json)
     _memory_file = Path(__file__).parent / "memory.json"
-    if not _memory_file.exists() and not cli.wizard:
+    if not _memory_file.exists() and not cli.setup:
         _log.info("First run detected — launching setup wizard")
         from setup_wizard import wizard as _wizard
         _wizard()
