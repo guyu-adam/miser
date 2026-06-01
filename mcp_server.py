@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Miser MCP Server v1.5.4 — Drop-in MCP bridge for ANY agent.
+Miser MCP Server v1.5.5 — Drop-in MCP bridge for ANY agent.
 
 Usage — add to agent's MCP config:
   {"mcpServers": {"miser": {"command": "python3", "args": [".../mcp_server.py"]}}}
@@ -100,10 +100,9 @@ TOOLS = [
     {
         "name": "miser_read",
         "description": (
-            "Read a file from disk via Miser. ZERO API tokens — use this "
-            "INSTEAD of reading files directly through the agent. Saves ~95% "
-            "tokens vs cloud-based file read. Ideal for understanding code, "
-            "checking configs, inspecting logs."
+            "Read a file via Miser. v1.5.5: incremental diff (unchanged files return "
+            "zero content) + semantic cache (repeated queries skip IO). ZERO API tokens. "
+            "Use INSTEAD of reading files directly through the agent."
         ),
         "inputSchema": {
             "type": "object",
@@ -119,9 +118,10 @@ TOOLS = [
     {
         "name": "miser_outline",
         "description": (
-            "Get a file's structure — function/class/method listing with line "
-            "numbers. ZERO tokens. Use this INSTEAD of reading a whole file "
-            "just to understand its structure. Saves 90%+ tokens vs full read."
+            "Get a file's code structure via AST parsing (Python/JS/TS) — "
+            "function/class/method signatures with docstrings. v1.5.5: AST-based, "
+            "70-95% smaller than full file. ZERO tokens. Use INSTEAD of reading "
+            "a whole file just to understand its structure."
         ),
         "inputSchema": {
             "type": "object",
@@ -255,6 +255,61 @@ TOOLS = [
         },
     },
     {
+        "name": "miser_search",
+        "description": (
+            "Semantic search inside a file. Embeds your query + file chunks, "
+            "returns top-k most relevant sections via cosine similarity. "
+            "10,000-line file → ~50 lines returned. Requires Ollama with "
+            "nomic-embed-text. Use INSTEAD of grep for conceptual queries."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string",
+                          "description": "Natural language search query"},
+                "path":  {"type": "string",
+                          "description": "File to search inside"},
+                "top_k": {"type": "integer", "default": 3,
+                          "description": "Number of results (1-5)"},
+            },
+            "required": ["query", "path"],
+        },
+    },
+    {
+        "name": "miser_diff",
+        "description": (
+            "Incremental file read — returns only changed lines since last read. "
+            "Unchanged files return '[unchanged]' — ZERO tokens. First read returns "
+            "full content. v1.5.5: SHA-256 hash + Myers diff algorithm."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path":  {"type": "string",
+                          "description": "File path"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "miser_compress",
+        "description": (
+            "Compress long text before sending to agent. Keeps high-information "
+            "sentences (code symbols, named entities, action keywords), prunes "
+            "boilerplate. ~50% token reduction. Zero LLM cost."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text":  {"type": "string",
+                          "description": "Text to compress"},
+                "ratio": {"type": "number", "default": 0.5,
+                          "description": "Target keep ratio (0.3-0.7)"},
+            },
+            "required": ["text"],
+        },
+    },
+    {
         "name": "miser_ask",
         "description": (
             "Ask the local LLM a question. Runs on LOCAL GPU — zero cloud API "
@@ -348,6 +403,9 @@ ENDPOINT_MAP = {
     "miser_run":        "run",
     "miser_write":      "write",
     "miser_patch":      "patch",
+    "miser_search":     "search",
+    "miser_diff":       "diff",
+    "miser_compress":   "compress",
     "miser_context":    "context",
     "miser_ask":        "ask",
     "miser_explain":    "explain",
@@ -398,7 +456,7 @@ def handle_request(request: dict) -> dict | None:
             "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "miser-mcp", "version": "1.5.4"},
+                "serverInfo": {"name": "miser-mcp", "version": "1.5.5"},
                 "instructions": _INSTRUCTIONS,
             },
         }

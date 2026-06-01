@@ -1,7 +1,7 @@
 """
-Miser v1.5.4 - Zero-token local AI co-processor.
+Miser v1.5.5 - Zero-token local AI co-processor.
 Auto-detects any local LLM (Ollama, LM Studio, llama.cpp, vLLM, etc.).
-v1.5.4: + miser_context project awareness, auto-start Ollama, best-model selection, one-command agent setup.
+v1.5.5: + incremental diff, semantic search, AST outline, semantic cache, text compression. Tier1+Tier2 token-saving algorithms.
 Two execution paths:
   1. Zero-LLM (<50ms): shell, file read/write/grep/tree/exists/outline/patch
   2. Local LLM (no API cost): summarize, codegen, explain, fix, test, review, git_summary
@@ -19,7 +19,7 @@ if sys.platform == "win32":
 os.environ["NO_PROXY"] = "localhost,127.0.0.1"
 os.environ["no_proxy"] = "localhost,127.0.0.1"
 
-# ── Dependency self-check (v1.5.4: fail gracefully with fix instructions) ─────
+# ── Dependency self-check (v1.5.5: fail gracefully with fix instructions) ─────
 
 def _check_deps():
     """Check required packages. Print install hint if missing."""
@@ -314,7 +314,24 @@ def read_file_ep():
     d = request.json or {}
     path = d.get("path","").strip()
     if not path: return jsonify({"error":"path required"}), 400
-    content = read_file(path, d.get("limit", 8000))
+    
+    # v1.5.5: try semantic cache first
+    from embed import cache_lookup, cache_store
+    query_hint = d.get("query_hint", "")
+    cache_key = f"read:{os.path.expanduser(path)}"
+    cached = cache_lookup(cache_key, query_hint)
+    if cached:
+        console.print(Rule(f"[green]read (cached)  {path}[/green]"))
+        return jsonify({"content": cached, "path": path, "cached": True})
+    
+    # v1.5.5: incremental diff for repeated reads
+    from incremental import read as inc_read
+    content = inc_read(path, d.get("limit", 8000))
+    
+    # Cache the result
+    if not content.startswith("[unchanged]") and not content.startswith("File not"):
+        cache_store(cache_key, content, query_hint)
+    
     count_saved(len(content))
     observe_access(path)
     console.print(Rule(f"[green]read  {path}[/green]"))
@@ -345,7 +362,9 @@ def outline():
     if not path: return jsonify({"error":"path required"}), 400
     ts = datetime.now().strftime("%H:%M:%S")
     console.print(Rule(f"[green]outline  {ts}[/green]"))
-    result = outline_file(path)
+    # v1.5.5: use AST-based outline for Python/JS/TS
+    from ast_outline import outline as ast_outline
+    result = ast_outline(os.path.expanduser(path))
     try:
         fsize = Path(os.path.expanduser(path)).stat().st_size
     except OSError:
@@ -389,6 +408,43 @@ def context_summary():
         set_scan_root(os.path.expanduser(path))
     result = ctx_summary(mem=mem)
     return jsonify({"context": result, "timestamp": datetime.now().strftime("%H:%M:%S")})
+
+@app.route("/search", methods=["POST"])
+def semantic_search():
+    """Semantic search inside a file using embeddings."""
+    d = request.json or {}
+    query = d.get("query", "").strip()
+    path = d.get("path", "").strip()
+    if not query or not path:
+        return jsonify({"error": "query and path required"}), 400
+    from embed import search as sem_search
+    result = sem_search(query, os.path.expanduser(path), d.get("top_k", 3))
+    console.print(Rule(f"[green]search  {query[:50]}[/green]"))
+    return jsonify({"results": result, "query": query, "path": path})
+
+@app.route("/diff", methods=["POST"])
+def diff_read():
+    """Incremental file read using SHA-256 hash + diff."""
+    d = request.json or {}
+    path = d.get("path", "").strip()
+    if not path:
+        return jsonify({"error": "path required"}), 400
+    from incremental import read as inc_read
+    result = inc_read(os.path.expanduser(path))
+    console.print(Rule(f"[green]diff  {path}[/green]"))
+    return jsonify({"content": result, "path": path})
+
+@app.route("/compress", methods=["POST"])
+def compress_text():
+    """Compress text using heuristic information-density scoring."""
+    d = request.json or {}
+    text = d.get("text", "").strip()
+    if not text:
+        return jsonify({"error": "text required"}), 400
+    from compressor import compress as comp
+    result = comp(text, target_ratio=d.get("ratio", 0.5))
+    console.print(Rule(f"[green]compress  {len(text)}→{len(result)} chars[/green]"))
+    return jsonify({"compressed": result, "original_chars": len(text)})
 
 @app.route("/write", methods=["POST"])
 def write_file_ep():
@@ -678,7 +734,7 @@ def main():
 
     cli = cli_cfg["_cli"]
     if cli.version:
-        print("Miser v1.5.4")
+        print("Miser v1.5.5")
         _sys.exit(0)
 
     if cli.setup_agent:
@@ -699,7 +755,7 @@ def main():
 
     # ── Auto-discovery ───────────────────────────────────────────────────
     console.print()
-    console.print(Panel("[bold cyan]Miser v1.5.4[/bold cyan] - Auto-detecting local LLM...",
+    console.print(Panel("[bold cyan]Miser v1.5.5[/bold cyan] - Auto-detecting local LLM...",
                         border_style="cyan"))
 
     from backends import discover_backend
@@ -797,7 +853,7 @@ def main():
                 "level":      record.levelname,
                 "message":    record.getMessage(),
                 "module":     record.name,
-                "version":    "1.5.4",
+                "version":    "1.5.5",
             }
             if record.exc_info and record.exc_info[0]:
                 import traceback
@@ -814,7 +870,7 @@ def main():
             h.setFormatter(fmt)
 
     _log.basicConfig(level=_log.INFO, handlers=handlers, force=True)
-    _log.info(f"Miser v1.5.4 port={PORT} model={MODEL} backend={backend.name if backend else 'none'}")
+    _log.info(f"Miser v1.5.5 port={PORT} model={MODEL} backend={backend.name if backend else 'none'}")
 
     # Register security middleware
     app.before_request(rate_limit_middleware)
@@ -869,7 +925,7 @@ def main():
     model_note  = MODEL if not NO_LLM else "[yellow]none (zero-LLM only)[/yellow]"
 
     console.print(Panel(
-        "[bold cyan]Miser v1.5.4[/bold cyan]  *  Agent-agnostic local co-processor\n\n"
+        "[bold cyan]Miser v1.5.5[/bold cyan]  *  Agent-agnostic local co-processor\n\n"
         "[bold]Zero-LLM endpoints (<50ms):[/bold]\n"
         "  [green]/read /grep /outline /tree /exists /run /write /patch[/green]\n\n"
         "[bold]Local-LLM endpoints (0 API tokens):[/bold]\n"

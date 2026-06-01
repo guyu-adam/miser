@@ -22,7 +22,7 @@ def health():
     q = get_queue()
     return jsonify({
         "status": "ok",
-        "version": "1.5.4",
+        "version": "1.5.5",
         "model": MODEL,
         "model_family": ADAPTER.family if ADAPTER else "?",
         "backend": BACKEND.base_url if BACKEND else "?",

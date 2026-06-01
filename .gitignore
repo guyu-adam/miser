@@ -16,3 +16,5 @@ test-results/
 .miser_bootstrapped
 miser.log
 perf_report_qwen35_4b_raw.json
+embed_cache.json
+file_states.json
