@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Miser MCP Server v1.5.3 — Drop-in MCP bridge for ANY agent.
+Miser MCP Server v1.5.4 — Drop-in MCP bridge for ANY agent.
 
 Usage — add to agent's MCP config:
   {"mcpServers": {"miser": {"command": "python3", "args": [".../mcp_server.py"]}}}
@@ -238,6 +238,23 @@ TOOLS = [
 
     # ── Local-LLM tools — run on local GPU, zero cloud API cost ──────────
     {
+        "name": "miser_context",
+        "description": (
+            "Get a compact project context snapshot — git status, recent file "
+            "changes, project structure, and last conversation topics. ZERO "
+            "tokens, <50ms. Use this at the START of every conversation to "
+            "understand the project state without scanning files yourself."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string",
+                         "description": "Optional: project path. Default: Miser's current working directory."},
+            },
+            "required": [],
+        },
+    },
+    {
         "name": "miser_ask",
         "description": (
             "Ask the local LLM a question. Runs on LOCAL GPU — zero cloud API "
@@ -331,6 +348,7 @@ ENDPOINT_MAP = {
     "miser_run":        "run",
     "miser_write":      "write",
     "miser_patch":      "patch",
+    "miser_context":    "context",
     "miser_ask":        "ask",
     "miser_explain":    "explain",
     "miser_review":     "review",
@@ -380,7 +398,7 @@ def handle_request(request: dict) -> dict | None:
             "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "miser-mcp", "version": "1.5.3"},
+                "serverInfo": {"name": "miser-mcp", "version": "1.5.4"},
                 "instructions": _INSTRUCTIONS,
             },
         }

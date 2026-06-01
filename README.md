@@ -1,4 +1,4 @@
-# Miser v1.5.3 — 零 Token 本地 AI 协处理器
+# Miser v1.5.4 — 零 Token 本地 AI 协处理器
 
 **把本地磁盘和 GPU 变成 agent 的外挂。一条命令配好，每次自动省钱。**
 

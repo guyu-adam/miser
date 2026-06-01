@@ -1,7 +1,7 @@
 """
-Miser v1.5.3 - Zero-token local AI co-processor.
+Miser v1.5.4 - Zero-token local AI co-processor.
 Auto-detects any local LLM (Ollama, LM Studio, llama.cpp, vLLM, etc.).
-v1.5.3: auto-start Ollama, best-model selection, one-command agent setup.
+v1.5.4: + miser_context project awareness, auto-start Ollama, best-model selection, one-command agent setup.
 Two execution paths:
   1. Zero-LLM (<50ms): shell, file read/write/grep/tree/exists/outline/patch
   2. Local LLM (no API cost): summarize, codegen, explain, fix, test, review, git_summary
@@ -19,7 +19,7 @@ if sys.platform == "win32":
 os.environ["NO_PROXY"] = "localhost,127.0.0.1"
 os.environ["no_proxy"] = "localhost,127.0.0.1"
 
-# ── Dependency self-check (v1.5.3: fail gracefully with fix instructions) ─────
+# ── Dependency self-check (v1.5.4: fail gracefully with fix instructions) ─────
 
 def _check_deps():
     """Check required packages. Print install hint if missing."""
@@ -379,6 +379,17 @@ def exists():
         info["size"]    = p.stat().st_size if p.is_file() else None
     return jsonify(info)
 
+@app.route("/context", methods=["POST"])
+def context_summary():
+    """Project context snapshot — git status, recent changes, project stats."""
+    from context import summary as ctx_summary, set_scan_root
+    d = request.json or {}
+    path = d.get("path", "").strip()
+    if path:
+        set_scan_root(os.path.expanduser(path))
+    result = ctx_summary(mem=mem)
+    return jsonify({"context": result, "timestamp": datetime.now().strftime("%H:%M:%S")})
+
 @app.route("/write", methods=["POST"])
 def write_file_ep():
     d = request.json or {}
@@ -646,7 +657,7 @@ def note():
     return jsonify({"saved": {key: val}})
 
 # ── main ─────────────────────────────────────────────────────────────────────────
-# ── v1.5.3: auto-detect backend + model on startup ───────────────────────────────
+# ── v1.5.4: auto-detect backend + model on startup ───────────────────────────────
 
 def main():
     """Entry point for 'miser' CLI command (pip install).
@@ -667,7 +678,7 @@ def main():
 
     cli = cli_cfg["_cli"]
     if cli.version:
-        print("Miser v1.5.3")
+        print("Miser v1.5.4")
         _sys.exit(0)
 
     if cli.setup_agent:
@@ -688,7 +699,7 @@ def main():
 
     # ── Auto-discovery ───────────────────────────────────────────────────
     console.print()
-    console.print(Panel("[bold cyan]Miser v1.5.3[/bold cyan] - Auto-detecting local LLM...",
+    console.print(Panel("[bold cyan]Miser v1.5.4[/bold cyan] - Auto-detecting local LLM...",
                         border_style="cyan"))
 
     from backends import discover_backend
@@ -786,7 +797,7 @@ def main():
                 "level":      record.levelname,
                 "message":    record.getMessage(),
                 "module":     record.name,
-                "version":    "1.5.3",
+                "version":    "1.5.4",
             }
             if record.exc_info and record.exc_info[0]:
                 import traceback
@@ -803,7 +814,7 @@ def main():
             h.setFormatter(fmt)
 
     _log.basicConfig(level=_log.INFO, handlers=handlers, force=True)
-    _log.info(f"Miser v1.5.3 port={PORT} model={MODEL} backend={backend.name if backend else 'none'}")
+    _log.info(f"Miser v1.5.4 port={PORT} model={MODEL} backend={backend.name if backend else 'none'}")
 
     # Register security middleware
     app.before_request(rate_limit_middleware)
@@ -858,7 +869,7 @@ def main():
     model_note  = MODEL if not NO_LLM else "[yellow]none (zero-LLM only)[/yellow]"
 
     console.print(Panel(
-        "[bold cyan]Miser v1.5.3[/bold cyan]  *  Agent-agnostic local co-processor\n\n"
+        "[bold cyan]Miser v1.5.4[/bold cyan]  *  Agent-agnostic local co-processor\n\n"
         "[bold]Zero-LLM endpoints (<50ms):[/bold]\n"
         "  [green]/read /grep /outline /tree /exists /run /write /patch[/green]\n\n"
         "[bold]Local-LLM endpoints (0 API tokens):[/bold]\n"
