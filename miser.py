@@ -675,22 +675,33 @@ if __name__ == "__main__":
     LOG_FORMAT = cli_cfg["log_format"]
     AUTH_HASH = hash_token(AUTH_TOKEN) if AUTH_TOKEN else ""
 
+    # Rebuild adapter if MODEL changed from module-level default
+    if MODEL != "auto" or adapter.family == "default":
+        adapter = ModelAdapter(MODEL)
+
     # Version + wizard handling (Phase 1 #8, #9)
     cli = cli_cfg["_cli"]
     if cli.version:
         print(f"Miser v1.5.5")
         sys.exit(0)
     if cli.setup:
-        from setup_wizard import wizard as _wizard
-        _wizard()
+        try:
+            from setup_wizard import wizard as _wizard
+            _wizard()
+        except ImportError:
+            _log.warning("setup_wizard module not found — skipping setup")
+            print("Setup wizard not available. Configure manually via --model and MISER_PORT.")
         sys.exit(0)
 
     # #34 fix: auto-detect first run (no model configured + no memory.json)
     _memory_file = Path(__file__).parent / "memory.json"
     if not _memory_file.exists() and not cli.setup:
         _log.info("First run detected — launching setup wizard")
-        from setup_wizard import wizard as _wizard
-        _wizard()
+        try:
+            from setup_wizard import wizard as _wizard
+            _wizard()
+        except ImportError:
+            _log.warning("setup_wizard module not found — skipping first-run wizard")
 
     # Update admin + security with resolved values
     _admin.MODEL = MODEL
