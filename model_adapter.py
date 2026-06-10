@@ -135,7 +135,7 @@ def has_thinking(family: str) -> bool:
 def use_raw_generate(family: str) -> bool:
     """True if we must use /api/generate (raw prompt) rather than /api/chat."""
     return family in ("qwen3", "qwen2", "llama4", "llama3", "llama2", "mistral",
-                       "phi3", "phi4", "gemma", "deepseek-r1", "deepseek")
+                       "phi3", "phi4", "gemma", "deepseek-r1", "deepseek", "gemma4")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -189,7 +189,7 @@ def build_prompt(family: str, system: str, user: str) -> str:
             f"<|assistant|>\n"
         )
 
-    if family == "gemma":
+    if family in ("gemma", "gemma4"):
         sys_part = f"<start_of_turn>system\n{system}<end_of_turn>\n" if system else ""
         return (
             f"<bos>{sys_part}"
@@ -298,7 +298,9 @@ class ModelAdapter:
 
     def generate_payload(self, system: str, user: str, max_tokens: int = 600,
                          temperature: float = 0.2) -> dict:
-        think_budget = 2400 if self._think else 0
+        # For thinking models, disable extra think budget — the model's
+        # native thinking already consumes tokens and we just need the answer.
+        think_budget = 0 if self._think else 0
         opts = {"num_predict": max_tokens + think_budget, "temperature": temperature}
 
         if self._raw:

@@ -19,7 +19,7 @@ import re, threading, time
 from pathlib import Path
 import requests as req
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
+OLLAMA_URL = "http://192.168.0.102:11434/api/generate"
 MODEL = "qwen3.5:4b"
 
 # ── Distillation templates ────────────────────────────────────────────────────

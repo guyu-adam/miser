@@ -17,7 +17,7 @@ from typing import Optional
 
 import requests as req
 
-EMBED_URL = "http://localhost:11434/api/embeddings"
+EMBED_URL = "http://192.168.0.102:11434/api/embeddings"
 EMBED_MODEL = "nomic-embed-text"
 CACHE_FILE = Path(__file__).parent / "embed_cache.json"
 

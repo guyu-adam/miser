@@ -22,7 +22,7 @@ import requests as req
 _embed_available = None          # None=unknown, True/False=known
 _embed_lock = threading.Lock()
 _embed_model = "nomic-embed-text"  # default; overridable
-_ollama_url = "http://localhost:11434"
+_ollama_url = "http://192.168.0.102:11434"
 _pulling = False                  # True while background pull is running
 
 

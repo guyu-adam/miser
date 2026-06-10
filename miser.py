@@ -670,6 +670,7 @@ if __name__ == "__main__":
     # Re-resolve with CLI args (Phase 1 #8)
     cli_cfg = resolve_config(argv=sys.argv[1:])
     MODEL = cli_cfg["model"]
+    adapter = ModelAdapter(MODEL)  # fix: rebuild for CLI model
     AUTH_TOKEN = cli_cfg["auth_token"]
     PORT = cli_cfg["port"]
     LOG_FORMAT = cli_cfg["log_format"]

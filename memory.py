@@ -9,7 +9,7 @@ import requests as req
 
 MEMORY_FILE = Path(__file__).parent / "memory.json"
 EMBED_FILE  = Path(__file__).parent / "embeddings.json"
-EMBED_URL   = "http://localhost:11434/api/embeddings"
+EMBED_URL   = "http://192.168.0.102:11434/api/embeddings"
 EMBED_MODEL = "nomic-embed-text"
 
 MAX_NOTES  = 200   # cap notes dictionary size (review item #7)
